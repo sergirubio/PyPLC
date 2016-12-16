@@ -1,0 +1,402 @@
+<h1 id="PyPLCDeviceServer">PyPLC Device Server</h1>
+<p>
+<e>Tango Device Server for dynamic programming of PLC and other Modbus-based devices; using ESRF's modbus device server and  PyTango_utils package.</e>
+&nbsp;
+</p>
+<ol><li><a href="#Description">Description</a></li><li>
+<a href="#StateMachine">State Machine</a></li><li>
+<a href="#ConfiguringtheModbusDevice">Configuring the Modbus Device</a></li><li>
+<a href="#PyPLCCommandsDescription">PyPLC Commands Description</a>
+<ol><li><a href="#ListofModbuscommands">List of Modbus commands</a></li><li>
+<a href="#FlagBitcommands">Flag / Bit commands</a>
+<ol><li><a href="#WriteFlag">WriteFlag</a></li></ol>
+</li><li>
+<a href="#IeeeFloatargin">IeeeFloat(argin)</a></li></ol>
+</li><li>
+<a href="#DynamicAttributesandStates">Dynamic Attributes and States</a>
+<ol><li><a href="#ConfiguringDynamicAttributes">Configuring DynamicAttributes</a></li><li>
+<a href="#ConfiguringDynamicStates">Configuring DynamicStates</a></li><li>
+<a href="#DynamicCommandsProperty">Dynamic Commands Property</a></li><li>
+<a href="#UsingEventsandDynamicAttributes">Using Events and Dynamic Attributes</a></li><li>
+<a href="#MoreaboutDynamicAttributes">More about DynamicAttributes</a></li><li>
+<a href="#Implementation">Implementation</a></li></ol>
+</li><li>
+<a href="#TheMappingProperty">The Mapping Property</a>
+<ol><li><a href="#ReasonstouseMappingpropertyinsteadofDynamicAttributes">Reasons to use Mapping property instead of DynamicAttributes</a></li><li>
+<a href="#CustomizingMappingreading">Customizing Mapping reading</a></li><li>
+<a href="#Mappingattributesandpolling">Mapping attributes and polling</a></li><li>
+<a href="#AttributeAllowance">Attribute Allowance</a></li><li>
+<a href="#ModbusCacheConfig">ModbusCacheConfig</a></li><li>
+<a href="#Internals:HowMapDictMapCommandsMapFlagsandReadMapwork">Internals: How MapDict, MapCommands, MapFlags and ReadMap work</a></li></ol>
+</li><li>
+<a href="#SnapFileproperty">SnapFile property</a></li></ol>
+<p>&nbsp;</p>
+<hr />
+<h2 id="Description">Description</h2>
+<p>
+The PyPLC Device Server provides a Dynamic interface to any Modbus-based control device. The PyPLC allows to declare DynamicAttributes using Python language; several commands can be used inside Attributes declaration to access any type of variable mapped in Modbus addresses.</p>
+<p>
+A C++ Modbus device server is used to manage the communications; it's currently used with Wago, Beckhoff, B&amp;R, ABB and Phoenix devices. Future releases will communicate with Siemens PLC's using Fetch&amp;Write protocol.</p>
+<p>
+This device server is shared with the ESRF, it only contains the minimal Modbus and DynamicDS behaviours ; all the Alba customization is done in <a class="wiki" href="/ct_EPS/wiki/AlbaPlc">AlbaPlc</a> and other subclasses.</p>
+<hr />
+<h2 id="StateMachine">State Machine</h2>
+<p>
+The States for a PyPLC device are:</p>
+<ul><li>INIT: Communication not tried yet
+</li><li>FAULT: Modbus is not able to communicate
+</li><li>UNKNOWN:  Modbus Device is not running or not configured
+</li><li>ON: Modbus communicating and no DynamicStates defined
+</li><li>Others: As defined by DynamicStates rules
+</li></ul>
+<hr />
+<h2 id="ConfiguringtheModbusDevice">Configuring the Modbus Device</h2>
+<p>
+<strong>Naming Suggestion:</strong> <em>name/of/plc</em>-MBUS ; it will show together the PLC and its Modbus device in Jive and any other sorted list</p>
+<p>
+Values for Properties</p>
+<ul><li>Protocol: TCP
+</li><li>Serialline: TCP
+</li><li>IpHost: XXX.XXX.XXX.XXX
+</li><li>TCPport: 502
+</li><li>ModbusID: 1 <br />
+</li></ul>
+<blockquote>
+<blockquote>
+<p>
+<em>it refers to modbus unit identifier, it's usually 0 or 1 but could be other number (up to 15) if working with devices sharing the same IP.</em></p>
+</blockquote>
+</blockquote>
+<ul><li>SocketConnectionSleep: 1000
+</li><li>TCPTimeout: 3 <br />
+</li></ul>
+<blockquote>
+<blockquote>
+<p>
+<em>these last two properties help PLC's to manage attempts of connection from several clients</em></p>
+</blockquote>
+</blockquote>
+<ul><li>CacheConfig: Command\nArg1\nArg2\nNextCommand\n...
+</li><li>CacheConfigSleep: 1000 <br />
+</li></ul>
+<blockquote>
+<blockquote>
+<p>
+<em>List of commands that will be executed by Modbus device and stored in a cache; clients will read the pre-stored values. <br />
+Pause between <a class="missing wiki" href="/ct_EPS/wiki/CacheConfig" rel="nofollow">CacheConfig?</a> update cycles.</em></p>
+</blockquote>
+</blockquote>
+<hr />
+<h2 id="PyPLCCommandsDescription">PyPLC Commands Description</h2>
+<h3 id="ListofModbuscommands">List of Modbus commands</h3>
+<table class="wiki">
+<tbody>
+<tr>
+<td>Command</td>
+<td> Argin</td>
+<td>Argout</td>
+<td>Result Description</td>
+</tr>
+<tr>
+<td>Reg(Address)</td>
+<td>DevShort</td>
+<td>DevShort</td>
+<td>Value of the given register</td>
+</tr>
+<tr>
+<td>Coil(Address)</td>
+<td>DevShort</td>
+<td>DevShort</td>
+<td>Value of the given coil ()</td>
+</tr>
+<tr>
+<td>Flag(Address,Bit)</td>
+<td>DevVarShortArray</td>
+<td>DevShort</td>
+<td>Value of a bit in the given register</td>
+</tr>
+<tr>
+<td>Bit(Number,Bit)</td>
+<td>DevVarShortArray</td>
+<td>DevShort</td>
+<td>Value of a bit in the given integer</td>
+</tr>
+<tr>
+<td>Regs(Address,N)</td>
+<td>DevVarShortArray</td>
+<td>DevVarShortArray</td>
+<td>Values of N consecutive registers</td>
+</tr>
+<tr>
+<td>Regs32(Address,N)</td>
+<td>DevVarShortArray</td>
+<td>DevVarShortArray</td>
+<td>N 32bit values from 2*N consecutive registers</td>
+</tr>
+<tr>
+<td>Coils(Address,N)</td>
+<td>DevVarShortArray</td>
+<td>DevVarShortArray</td>
+<td>Values of N consecutive coils</td>
+</tr>
+<tr>
+<td>IeeeFloat(Address)</td>
+<td>DevVarShortArray</td>
+<td>DevDouble</td>
+<td>32bit IeeeFloat read from 2 consecutive registers</td>
+</tr>
+<tr>
+<td>IeeeFloat(Int1,Int2)</td>
+<td>DevVarShortArray</td>
+<td>DevDouble</td>
+<td>32bit IeeeFloat build using two 16bit integers</td>
+</tr>
+<tr>
+<td>WriteFloat(Address,Value)</td>
+<td>DevVarStringArray</td>
+<td>DevString</td>
+<td>Writes a IeeeFloat number in two registers</td>
+</tr>
+<tr>
+<td>WriteCoil(Address,Value)</td>
+<td>DevVarShortArray</td>
+<td>DevVoid</td>
+<td>Writes a 0 or 1 in a coil</td>
+</tr>
+<tr>
+<td>WriteBit(Address,Value)</td>
+<td>DevVarShortArray</td>
+<td>DevVoid</td>
+<td>Writes a 0 or 1 in a bit of a register</td>
+</tr>
+<tr>
+<td>WriteInt(Address,Value)</td>
+<td>DevVarShortArray</td>
+<td>DevVoid</td>
+<td>Writes a 16bit value in a register</td>
+</tr>
+<tr>
+<td>WriteLong(Address,Value)</td>
+<td>DevVarLongArray</td>
+<td>DevVoid</td>
+<td>Writes a 32bit value in two registers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="FlagBitcommands">Flag / Bit commands</h3>
+<ul><li>Flag can be used for extracting a bit from Hardware (a Modbus Addres) or an int passed as argument ... an Bit is an alias for this last behaviour.
+</li></ul>
+<h4 id="WriteFlag">WriteFlag</h4>
+<blockquote>
+<p>
+To be able to write the flag the status register has to be read previously; if this register is cached then its value will be read form DigitalsWRITE
+prior to writing using a PresetSingleRegister command.</p>
+</blockquote>
+<h3 id="IeeeFloatargin">IeeeFloat(argin)</h3>
+<p>
+Parses multiple argument types. Now if argin is a single elment it is understood as a <a class="missing wiki" href="/ct_EPS/wiki/ModbusAddress" rel="nofollow">ModbusAddress?</a> and two registers are read from the PLC to calculate a 32 bit float.</p>
+<p>
+If argin is a list its 2 first elements are used to calculate the float, without access to the PLC</p>
+<hr />
+<h2 id="DynamicAttributesandStates">Dynamic Attributes and States</h2>
+<p>
+Devices that inherit from DynamicDS have new features like Dynamic <strong>Attributes</strong>, <strong>States</strong> and <strong>Commands</strong> configurable using Tango Properties. Due to its particularities it has its own Event/Polling control properties that can be tuned to improve performance (not needed if number of attributes is below 50).</p>
+<p>
+These properties are UseEvents, KeepTime, KeepAttributes and CheckDependencies. More info about configuration and DynamicDS behavior here: <a class="ext-link" href="../../howtos/dynamicattributes"> DynamicDS-HowTo</a>.</p>
+<h3 id="ConfiguringDynamicAttributes">Configuring DynamicAttributes</h3>
+<p>
+The DynamicAttributes Property is used to create the read/write attributes of the PLC Device.</p>
+<p>
+This is the format that can be used to declare the Dynamic Attributes (more information is available in the PyTango_utils module user guide):</p>
+<pre class="wiki">ATT_NAME=type(READ and !DevComm1(args) or WRITE and !DevComm2(args,VALUE))</pre>
+<p>
+Any of the <strong>PyPLC Device Commands</strong> can be used in the Attribute declaration.</p>
+<p>
+The type of attributes can be declared using DevLong/DevDouble/DevBool/DevString, DevVarLongArray/DevVarDoubleArray/DevVarBoolArray/DevVarStringArray 
+Or the equivalent python types: int , float, bool, str, list(int(i) for i in []), [float(i) for i in[]], ...</p>
+<p>
+Therefore:</p>
+<pre class="wiki">AnalogIntsREAD=list(long(r) for r in Regs(7800,100)) #Array of 100 integers read from address 7800</pre>
+<p>
+equals to</p>
+<pre class="wiki">AnalogIntsREAD=DevVarLongArray(Regs(7800,100)) #Array of 100 integers read from address 7800</pre>
+<h3 id="ConfiguringDynamicStates">Configuring DynamicStates</h3>
+<p>
+When giving a value to this property it will override the default PyPLC state (ON). State managed by attribute qualities is disabled in PyPLC.</p>
+<pre class="wiki">FAULT=CPU_STATUS &lt; 0
+WARNING=max([Temperature1,Temperature2])&gt;70
+OK=1 #State by default</pre>
+<p>
+See <a class="ext-link" href="../../howtos/dynamicattributes#UsingDynamicStatesforchangingthedeviceState"> DynamicDS-HowTo</a></p>
+<h3 id="DynamicCommandsProperty">Dynamic Commands Property</h3>
+<p>
+This is the syntax of DynamicCommands property:</p>
+<div class="code">
+<pre>Open_PNV_01=(WriteBit(193,2,1),'DONE')[-1]
+Close_PNV_01=(WriteBit(193,1,1),'DONE')[-1]
+Move_PNV_01=(WriteBit(193,1+int(ARGS[0]),1),'DONE')[-1]</pre>
+</div>
+<p>
+All commands where ARGS are not used are created as DevVoid/DevString commands. If args is used then argin is always a DevVarStringArray.</p>
+<h3 id="UsingEventsandDynamicAttributes">Using Events and Dynamic Attributes</h3>
+<p>
+See <a class="ext-link" href="../../howtos/dynamicattributes#TangoEvents"> DynamicDS-HowTo</a></p>
+<h3 id="MoreaboutDynamicAttributes">More about DynamicAttributes</h3>
+<p>
+DynamicAttributes that are constructed using others (e.g. Ts=float((T1+T2)/2)) don't generate new HW calls; they read a cache where the last read value is stored.</p>
+<p>
+DynamicAttributes are READ/WRITE. To specify different behaviour for reading and writing I'm using the keywords READ, WRITE and VALUE in this way:</p>
+<pre class="wiki">#A TestMode can be read/set using the 7th bit of the flags registers 
+TestMode=bool(READ and Flag(XXX0,7) or WRITE and WriteFlag(XXX1,7,int(VALUE)))</pre>
+<p>
+A read_attribute access can be forced by using Attr('AttrName') instead of the attribute name directly, but if the 'parent' attribute has a polling configured it simply returns the last value in the polling buffer.</p>
+<p>
+There's a parallel cache of 'stored values' that is used for Write Attributes in the PySignalSimulator. It uses the command VAR(name,VALUE), it can be used also to retrieve the last forced value.</p>
+<p>
+Arrays can be constructed using a set of commands:</p>
+<pre class="wiki">AnalogIntsWRITE=list(long(r) for r in (Regs(8120,125) + Regs(8246,125) + Regs(8372,125)))</pre>
+<p>
+The Type of each attribute created is determined by the first words in the declaration (int / list(long / str , ...) is not the best way to do it but I'm not able to evaluate expressions composed by attributes at the time dyn_attr creator is called.
+<br />
+Command updateDynamicAttributes allows to reload the DynamicAttributes property and create new attributes if needed.
+<br />
+A new Class <a class="missing wiki" href="/ct_EPS/wiki/DynamicAttribute" rel="nofollow">DynamicAttribute?</a> overloads all the operators needed to operate the values of the Attributes but keeping the quality and timestamp values following the newest/worst criteria, it works for both Scalar and Spectrum types.</p>
+<h3 id="Implementation">Implementation</h3>
+<p>
+Local methods/commands are added in the DynamicDS.init call using a dictionary:</p>
+<pre class="wiki">def __init__(self,cl, name):
+
+DynamicDS.__init__(self,cl,name,globals(),_locals={
+'Reg': lambda _addr: self.Reg(_addr),
+...
+},useDynStates=True)
+PyPLC.init_device(self)</pre>
+<p>
+A declaration of attributes for a PyPLC device looks like this (although it's better to declare arrays using the Mapping property instead):</p>
+<pre class="wiki">#Declare Arrays
+DataArray=list(long(r) for r in (Regs(0,125)+Regs(126,50)))
+#Individual Attributes
+Register=int(Attr('DataArray')[0])
+TestMode=bool(READ and Bit(Register,7) or WRITE and WriteFlag(1,7,int(VALUE)))</pre>
+<hr />
+<h2 id="TheMappingProperty">The Mapping Property</h2>
+<p>
+The values of Mapping will be used to create Read/Write DevVarLongArray attributes that will be always available independently of the contents of the DynamicAttributes property.</p>
+<p>
+Arrays of data can be declared in any of these formats ($Address refers to an integer matching a Modbus address):</p>
+<pre class="wiki">        Map1:StartAddress,+length
+        Map2:StartAddress,EndAddress
+        Map3:Regs(Addr1,length1)+Regs(Addr2,length2)</pre>
+<p>
+It equals to these <a class="missing wiki" href="/ct_EPS/wiki/DynamicAttribute" rel="nofollow">DynamicAttribute?</a> declarations:</p>
+<pre class="wiki">        Map1=DevVarLongArray(Regs(StartAddres,length))
+        Map2=DevVarLongArray(Regs(StartAddres,EndAddress-StartAddress))
+        Map3=DevVarLongArray(Regs(A1,l1)+Regs(A2,l2))</pre>
+<p>
+Mapping configuration takes in account that Modbus doesn't allow to read more than 125 contiguous registers in a single order.</p>
+<p>
+The arrays declared using the Mapping property will be automatically added to the Modbus.CacheConfig property if the PyPLC.ModbusCacheConfig property is set or if the PyPLC.SetModbusCacheConfig command is executed.</p>
+<p>
+This Modbus.CacheConfig creates an intermediate polling buffer between Modbus device and its clients that improve the reliability of the communications and events generation (solving the PollingThreadOutOfSync exceptions problem).</p>
+<h3 id="ReasonstouseMappingpropertyinsteadofDynamicAttributes">Reasons to use Mapping property instead of DynamicAttributes</h3>
+<p>
+In our PLCs all the attributes are being read from certain areas of memory that are read together. e.g. If DigitalInputs are mapped between addresses 7500 and 7620 the attributes declaration is like:</p>
+<pre class="wiki">        DigitalInputs=DevVarLongArray(Regs(7500,7620))
+        DigInput1=int(DigitalInputs[0])
+        DigInput2=int(DigitalInputs[1])</pre>
+<p>
+Problems of this declaration are:</p>
+<ul><li>DigitalInputs must be read before DigInput1 and DigInput2.
+</li></ul>
+<p>
+﻿ * DigitalInputs will require a ModbusCacheConfig setup; or its bigger read time will provoke polling thread problems.</p>
+<p>
+Mapping property allows to pre-declare some arrays of data that will be added to the Attributes list, but being read before any other attribute and forcing Modbus.CacheConfig and Modbus.CacheSleep properties setup if  PyPLC.ModbusCacheConfig property has an integer value.</p>
+<h3 id="CustomizingMappingreading">Customizing Mapping reading</h3>
+<ul><li>DefaultReadCommand property allows to overwrite ReadHoldingRegisters as default command for Mappings reading
+</li></ul>
+<ul><li>AddressOffset adds an integer offset to addresses when passed to the Modbus device
+</li></ul>
+<h3 id="Mappingattributesandpolling">Mapping attributes and polling</h3>
+<ul><li>In the PyPLC the DynamicDS.KeepAttributes flag is always valid for mapped attributes.
+</li></ul>
+<ul><li>CheckDependencies and KeepAttributes have been improved to save times.
+</li></ul>
+<ul><li>The ReadMap processing has been reduced to &lt;1ms; and for every Mapped array it will update dyn_values and _locals dictionary. So it is not needed to call evalAttr or read_dyn_attr to update the Mappings.
+</li></ul>
+<ul><li>If the last value stored for a dependency is older than KeepTime the read_dyn_attr(dependency) method will be called to update this value.
+</li></ul>
+<ul><li>In addition the StateMachine() is executed every STATE_MACHINE_PERIOD (KeepTime) and will try to update Mappings if LastHWUpdate was more than a period ago.
+</li></ul>
+<h3 id="AttributeAllowance">Attribute Allowance</h3>
+<ul><li>Attributes declared using the Mapping property are always readable.
+</li><li>DynamicAttributes depending on MappedAttributes will be allowed once MappedAttribute is updated (dependency parsed from properties)
+</li><li>Rest of DynamicAttributes are always enabled.
+</li></ul>
+<p>
+Dynamic Attributes::</p>
+<blockquote>
+<p>
+The method <strong>DynamicDS.is_dyn_allowed</strong> is overwritten. It allows to read DynamicAttributes when Mappings are updated and out of INIT State.
+<br />INIT State is left once CPUStatus has been read.</p>
+</blockquote>
+<h3 id="ModbusCacheConfig">ModbusCacheConfig</h3>
+<p>
+If TRUE, writes Modbus.CacheConfig using Mapping values. If Int() additionally configures CacheSleep</p>
+<h3 id="Internals:HowMapDictMapCommandsMapFlagsandReadMapwork">Internals: How MapDict, MapCommands, MapFlags and ReadMap work</h3>
+<ul><li><strong>MapDict</strong> will keep <strong>AttrName:Formula</strong> as declared in properties.
+</li></ul>
+<ul><li><strong>MapCommands</strong> will contain the list of modbus commands for each mapping (result of <strong>GetCommands4Map(formula)</strong> call).
+</li></ul>
+<ul><li><strong>MapFlags</strong> [Map] is set to True when registers belonging to a Map have been updated from hardware ( <strong>sendModbusCall().checkMaps()</strong> call).
+</li></ul>
+<ul><li><strong>ReadMap(Attr / Regs)</strong> will process the reading of the registers associated to a Map and will store the readings in <em>dyn_values</em> and <em>_locals</em> dictionaries. It will also set the <strong>MapFlag</strong> to False.
+</li></ul>
+<h2 id="SnapFileproperty">SnapFile property</h2>
+<p>
+PyPLC devices can record Snap* files with the values of all registers. This is useful to record and debug the cause of "unknown" interlocks during the night.</p>
+<p>
+These files can be generated automatically on state change (controlled by SnapFile property) or on SaveSnapFile command.</p>
+<p>
+The log files look like this:</p>
+<pre class="wiki">#2013-10-04 11:26:01:WS/RF/WR_RF_EPS-PLC.State changed: INIT =&gt; INIT =&gt; ALARM
+
+WS_RF_WR_RF_EPS_PLC = {
+
+"STATE" : PyTango._PyTango.DevState.INIT,
+
+"STATUS" : 'Device is in ALARM State\nINTERLOCK flag is ENABLED.\nLast update at Fri Oct  4 11:25:59 2013.\n',
+
+"AnalogIntsREAD" : DynamicAttribute({"value": [8451, 255, 8451, 253, 8451, 32767, 8451, 32767, 8451, 32767, 8451, 32767, 8451, 32767, 8451, 241, 8451, 237, 8451, 239, 8451, 240, 8451, 239, 8451, 235, 8451, 240, 8195, 238, 8195, 238, 8451, 241, 8451, 240, 8451, 327 ...</pre>
+<h3 id="ReloadingSnapFiles">Reloading Snap Files</h3>
+<p>
+In ipython:</p>
+<div class="code">
+<pre>def loadSnapFile(filename):
+    #Returns a tuple: device,dict(values)
+    import PyTango
+    f = open(filename)
+    txt = ''.join([l.split('#')[0] for l in f.readlines() if l.strip()])
+    device,code = txt.split('=',1)
+    locals_ = {'PyTango':PyTango,'DynamicAttribute':dict}
+    [locals_.update(d) for d in (PyTango.AttrQuality.names,PyTango.DevState.names,PyTango.CmdArgType.names)]
+    return (device,eval(code,locals_))
+
+device,values = loadSnapFile('/tmp/AlbaPLC_WS_RF_WR_RF_EPS_PLC_20131004112601.stamp')</pre>
+</div>
+<p>
+And voila!</p>
+<div class="code">
+<pre>device
+Out[4]: 'WS_RF_WR_RF_EPS_PLC '
+
+values['CPUStatus']
+Out[32]:
+{'date': 'Fri Oct  4 11:26:01 2013',
+ 'quality': PyTango._PyTango.AttrQuality.ATTR_VALID,
+ 'type': PyTango._PyTango.CmdArgType.DevLong,
+ 'value': 22}
+
+values['DigitalsREAD']['value'][:10]
+Out[38]: [22, 0, 26633, 0, 26696, 0, 0, 0, 0, 1536]</pre>
+</div>
