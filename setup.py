@@ -3,38 +3,39 @@
 from setuptools import setup, find_packages
 
 __doc__ = """
+
 To install as system package:
 
   python setup.py install
   
-To install as local package:
+To install as local package, just run:
+
+  mkdir /tmp/builds/
+  python setup.py install --root=/tmp/builds
+  /tmp/builds/usr/bin/$DS -? -v4
+
+To tune some options:
 
   RU=/opt/control
   python setup.py egg_info --egg-base=tmp install --root=$RU/files --no-compile \
-    --install-lib=lib/python/site-packages --install-scripts=ds
+    --install-lib=lib/python/site-packages --install-scripts=bin
 
 -------------------------------------------------------------------------------
 """
 
 print(__doc__)
 
-version = open('VERSION').read().strip()
-scripts = ['PyPLC']
+version = str(open('PyPLC/VERSION').read().strip())
+scripts = ['bin/PyPLC']
 license = 'GPL-3.0'
 
-package_dir = {
-    'PyPLC': '.',
-}
+package_dir = {'PyPLC': 'PyPLC',}
 packages = package_dir.keys()
-
-package_data = {
-    '': ['VERSION'],
-}
-
-packages = package_dir.keys()
-
+package_data = {'PyPLC': ['VERSION'],}
 
 setup(name = 'tangods-pyplc',
+      author = 'Sergi Rubio',
+      author_email="srubio@cells.es",
       version = version,
       license = license,
       description = 'Tango device for Modbus equipment',
