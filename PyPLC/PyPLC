@@ -1,0 +1,6 @@
+#!/bin/bash
+
+pyplc_path=`python -c "import imp;print(imp.find_module('PyPLC')[1])"`
+# TODO: is mandatory to be in the module path 
+cd $pyplc_path
+screen -dm -S PyPLC-$1 python PyPLC.py $1 $2
