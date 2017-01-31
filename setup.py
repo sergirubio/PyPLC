@@ -33,7 +33,7 @@ package_dir = {'PyPLC': 'PyPLC',}
 packages = package_dir.keys()
 package_data = {'PyPLC': ['VERSION'],}
 
-setup(name = 'tangods-pyplc',
+setup(name = 'pyplc',
       author = 'Sergi Rubio',
       author_email="srubio@cells.es",
       version = version,
