@@ -612,19 +612,24 @@ class PyPLC(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def __init__(self,cl, name):
         self.StaticAttributes = []
-        self.init_parent_classes(cl,name)
+        self.init_parent_classes(cl,name)     
         PyPLC.init_device(self)
 
 #------------------------------------------------------------------
 #    Device destructor
 #------------------------------------------------------------------
     def delete_device(self):
-        print '#'*80
-        print "[Device delete_device method] for device",self.get_name()
-        self.set_state(PyTango.DevState.INIT)
-        self.threadDict.stop()
-        print '#'*80
-
+        try:
+          print('-'*80)
+          print("[Device delete_device method] for %s"%self.get_name())
+          self.set_state(PyTango.DevState.INIT)
+          self.threadDict.stop()
+          try: self.modbusLock.release()        
+          except: pass
+          del self.modbus
+          threading.Event().wait(3.)
+        except: traceback.print_exc()
+        print('-'*80)
 
 #------------------------------------------------------------------
 #    Device initialization
@@ -647,12 +652,13 @@ class PyPLC(PyTango.Device_4Impl):
         # INITIALIZING MODBUS CONNNECTION
         # -----------------------------------------------------------
         self.info('Initializing Modbus connection')
+        self.modbus = None
+        self.modbusLock = getattr(self,'modbusLock',None) or threading.Lock()
         prop = PyTango.Database().get_device_property(self.get_name(),['Modbus_name'])
         self.Modbus_name = toList(prop.get('Modbus_name',['']))[0]
         self.last_try,self.last_failed,self.last_communication,self.average_read_time = 0,0,0,0
         self.last_exception,self.last_exception_time,self.last_state_machine = '',0,0
-        self.modbus = None
-        self.modbusLock = threading.Lock()
+
         if len(self.Modbus_name)>0:
             try:
                 self.modbus = PyTango.DeviceProxy(self.Modbus_name)
@@ -685,7 +691,7 @@ class PyPLC(PyTango.Device_4Impl):
             if check_polled: self.check_polled_attributes(new_attr=dict.fromkeys(self.MapDict.keys(),3000))
             self.initThreadDict()
         
-        self.info('Ready to accept request ...')
+        self.info('PyPLC Ready to accept request ...')
         
     def updateDynamicAttributes(self):
         """Forces dynamic attributes update from properties.
