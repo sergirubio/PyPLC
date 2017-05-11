@@ -77,3 +77,21 @@ In case you have many memory areas to update at different rates, an additional p
     SLOW_ARRAY=3000,+240,/60 #Updated only every 60 seconds
 
 
+DynamicCommands
+---------------
+
+For example, having a variable that toggles value when 1 is written, we can use 2 commands to do set() and clear()
+
+Given this DynamicAttributes formula::
+
+  ValueToToggle = DevBoolean(READ and Bit(DigitalsREAD[20],7) or WRITE and WriteFlag(21,7,VALUE))
+
+We can convert it to 2 DynamicCommands::
+
+  CmdDisableValue = str( not Bit(DigitalsREAD[20],7) and WriteFlag(21,7,1) )
+  CmdEnableValue = str( Bit(DigitalsREAD[20],7) and WriteFlag(21,7,1) )
+
+Si lo prefieres puedes usar esta sintaxis::
+
+  CmdDisableValuep = str( WriteFlag(21,7,1) if not Bit(DigitalsREAD[20],7) else 'already disabled' )
+  CmdEnableValue = str( WriteFlag(21,7,1) if Bit(DigitalsREAD[20],7) else 'already enabled' )
