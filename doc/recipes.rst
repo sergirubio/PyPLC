@@ -1,6 +1,11 @@
 Testing and Configuring a PyPLC Device
 ======================================
 
+.. contents::
+
+Modbus config
+-------------
+
 You must create a Modbus and a PyPLC device and set the following DEVICE properties::
 
   Modbus.Iphost        10.0.X.X
