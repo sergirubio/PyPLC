@@ -181,6 +181,7 @@ class PyPLC(PyTango.Device_4Impl):
         bStr = bStr.replace('0b','')
         if len(bStr)<N: bStr='0'*(N-len(bStr))+bStr
         return bStr[-N:]
+    
     Dec2Bin = Denary2Binary
     
     @staticmethod
@@ -192,8 +193,9 @@ class PyPLC(PyTango.Device_4Impl):
         
     @staticmethod
     def Exponent(n):
-        """ Used in IeeeFloat type conversions, Converts an array of 8 binary numbers in a signed integer. """
-        sum=0
+        """ Used in IeeeFloat type conversions, 
+        Converts an array of 8 binary numbers in a signed integer. """
+        sum = 0
         for x in range(0,8):
             sum += int(n[x])*pow(2,7-x)
         if sum == 0: return '0'
@@ -203,8 +205,8 @@ class PyPLC(PyTango.Device_4Impl):
     @staticmethod
     def Significand(n):
         """ Used in IeeeFloat type conversions """
-        sum=0.0
-        pot=1.0
+        sum = 0.0
+        pot = 1.0
         for x in range(0,24):
             sum += int(n[x])*pot/pow(2,x)
         return sum
@@ -221,16 +223,24 @@ class PyPLC(PyTango.Device_4Impl):
     @staticmethod
     def Ints2Float(arg):
         """ Converts an array of 2 integers into an IeeeFloat number """
+
         #Match 0 values
         bla = int(arg[1])
-        if bla  == 0 and int(arg[0]) == 0: return 0.0
-        elif int(arg[0]) == -22939 and bla == 11195: return 0.0
+        if bla  == 0 and int(arg[0]) == 0: 
+            return 0.0
+        elif int(arg[0]) == -22939 and bla == 11195: 
+            return 0.0
+
         #Convert high bytes
-        if bla >= 0: highval = PyPLC.Denary2Binary(bla)
+        if bla >= 0: 
+            highval = PyPLC.Denary2Binary(bla)
         else:
             bla = (-1)*bla
-            temp = PyPLC.Denary2Binary(bla) #"The bin value of the absolute: ",temp
-            highval = PyPLC.negBinary(temp) #"The bin high value of the reverse: ", highval
+            #"The bin value of the absolute: ",temp
+            temp = PyPLC.Denary2Binary(bla) 
+            #"The bin high value of the reverse: ", highval
+            highval = PyPLC.negBinary(temp) 
+            
         #Convert low bytes
         bla = int(arg[0])
         if bla >= 0: lowval = PyPLC.Denary2Binary(bla)
@@ -238,16 +248,20 @@ class PyPLC(PyTango.Device_4Impl):
             bla = (-1)*bla;
             temp = PyPLC.Denary2Binary(bla) #print "The bin value of the absolute: ",temp
             lowval = PyPLC.negBinary(temp) #print "The bin low value of the reverse: ", lowval
+
         #Build result
         highval = highval + lowval
+
         sign = int(highval[0])
-        if (sign == 0): sign1 = 1
-        else: sign1 = -1
+        sign1 = 1 if not sign else -1
+
         expo = highval[1:9]
         mant = '1' + highval[9:]
+
         ex = int(PyPLC.Exponent(expo))
         si = float(PyPLC.Significand(mant))
         argout= float(sign1*pow(2,ex)*si)
+
         return argout
         
     # -----------------------------------------------------------------------------
@@ -835,30 +849,42 @@ class PyPLC(PyTango.Device_4Impl):
     
     def IeeeFloat(self,argin):
         self.debug("In "+self.get_name()+"::IeeeFloat("+str(argin)+")")
-        argin = [int(i) for i in argin] if hasattr(argin,'__iter__') else argin
+        argin = map(int,argin) if fun.isSequence(argin) else argin
         try:
             #First Parse the arguments (may be an array or an address to read
-            if type(argin)==type([]) and len(argin)>1:
-                arg=argin[0:2]    
+            if isinstance(argin,list) and len(argin)>1:
+                arg=argin[:2]    
             else:
-                if type(argin)==type([]):
+                if isinstance(argin,list):
                      _addr=argin[0]
                 else: 
                     _addr=argin
-                # The ReadHoldingRegisters Modbus Command uses Arrays as both Argument In and Out
+                # The ReadHoldingRegisters Modbus Command 
+                # uses Arrays as both Argument In and Out
                 arr_argin=[_addr,2]
                 arg = self.sendModbusCommand("ReadHoldingRegisters",arr_argin)
+                
             return self.Ints2Float(arg)
+        
         except PyTango.DevFailed, e:
-            self.last_exception,self.last_exception_time = traceback.format_exc(),time.time()
+            self.last_exception = traceback.format_exc()
+            self.last_exception_time= time.time()
             self.warning('In IeeeFloat(%s):\n%s'%(argin,self.last_exception))
+            
             #PyTango.Except.re_throw_exception(e,"DevFailed Exception",str(e),inspect.currentframe().f_code.co_name)
             #PyTango.Except.throw_exception("PyPLC_DevFailed",str(e),inspect.currentframe().f_code.co_name)
-            PyTango.Except.throw_exception(str(e.args[0]['reason']),str(e.args[0]['desc']),inspect.currentframe().f_code.co_name+':'+str(e.args[0]['origin']))
+            PyTango.Except.throw_exception(str(e.args[0]['reason']),
+                        str(e.args[0]['desc']),
+                        inspect.currentframe().f_code.co_name+':'+
+                        str(e.args[0]['origin']))
+            
         except Exception,e:
-            self.last_exception,self.last_exception_time = traceback.format_exc(),time.time()
-            print self.last_exception
-            PyTango.Except.throw_exception(str(e),"Something wrong!",inspect.currentframe().f_code.co_name)
+            self.last_exception = traceback.format_exc()
+            self.last_exception_time= time.time()
+            self.warning('In IeeeFloat(%s):\n%s'%(argin,self.last_exception))
+            
+            PyTango.Except.throw_exception(str(e),
+                    "Something wrong!",inspect.currentframe().f_code.co_name)
 
 #------------------------------------------------------------------
 #    @mniegowski 
