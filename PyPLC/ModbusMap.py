@@ -207,13 +207,19 @@ class ModbusMap(object):
         self.load(fandango.tango.get_device_property(device.name(),'Mapping'))
         [self[k].set(list(getattr(device,k))) for k in self]
         
-    def export(self):
+    def export(self,filename=None):
         """ Return an array with whole memory map in a single buffer """
         buf = []
         for i in range(self.end):
             try: buf.append(self[i])
             except: buf.append(0)
-        return buf
+        if filename:
+            f = open(filename,'w')
+            f.write('\n'.join(map(str,buf)))
+            f.close()
+            return filename
+        else:
+            return buf
     
     def check(self,regs):
         """
