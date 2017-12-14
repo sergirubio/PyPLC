@@ -175,7 +175,8 @@ class PyPLC(PyTango.Device_4Impl):
 
     @staticmethod
     def Denary2Binary(x,N=16):
-        """ It converts an integer to an string with its binary representation """ 
+        """ It converts an integer to an string with its binary representation 
+        """ 
         if x>=0: bStr = bin(int(x))
         else: bStr = bin(int(x)%2**16)
         bStr = bStr.replace('0b','')
@@ -224,43 +225,58 @@ class PyPLC(PyTango.Device_4Impl):
     def Ints2Float(arg):
         """ Converts an array of 2 integers into an IeeeFloat number """
 
-        #Match 0 values
-        bla = int(arg[1])
-        if bla  == 0 and int(arg[0]) == 0: 
-            return 0.0
-        elif int(arg[0]) == -22939 and bla == 11195: 
-            return 0.0
+        reg1,reg2 = int(arg[0]),int(arg[1])
+        print('>'*80)
+        import struct,traceback
+        try:
+            p = struct.pack('hh', reg1, reg2)
+            argout = struct.unpack('f', p )[0]
+        except:
+            print('Ints2Float(%s) failed!'%str(arg))
+            traceback.print_exc()
+        
+        #argout = struct.unpack('d', struct.pack('LL', reg1, reg2) )[0]
+        
+        ##Match 0 values
+        #bla = int(arg[1])
+        #if bla  == 0 and int(arg[0]) == 0: 
+            #return 0.0
+        #elif int(arg[0]) == -22939 and bla == 11195: 
+            #return 0.0
 
-        #Convert high bytes
-        if bla >= 0: 
-            highval = PyPLC.Denary2Binary(bla)
-        else:
-            bla = (-1)*bla
-            #"The bin value of the absolute: ",temp
-            temp = PyPLC.Denary2Binary(bla) 
-            #"The bin high value of the reverse: ", highval
-            highval = PyPLC.negBinary(temp) 
+        ##Convert high bytes
+        #if bla >= 0: 
+            #highval = PyPLC.Denary2Binary(bla)
+        #else:
+            #bla = (-1)*bla
+            ##"The bin value of the absolute: ",temp
+            #temp = PyPLC.Denary2Binary(bla) 
+            ##"The bin high value of the reverse: ", highval
+            #highval = PyPLC.negBinary(temp) 
             
-        #Convert low bytes
-        bla = int(arg[0])
-        if bla >= 0: lowval = PyPLC.Denary2Binary(bla)
-        else:
-            bla = (-1)*bla;
-            temp = PyPLC.Denary2Binary(bla) #print "The bin value of the absolute: ",temp
-            lowval = PyPLC.negBinary(temp) #print "The bin low value of the reverse: ", lowval
+        ##Convert low bytes
+        #bla = int(arg[0])
+        #if bla >= 0: 
+            #lowval = PyPLC.Denary2Binary(bla)
+        #else:
+            #bla = (-1)*bla;
+            ##print "The bin value of the absolute: ",temp
+            #temp = PyPLC.Denary2Binary(bla)
+            ##print "The bin low value of the reverse: ", lowval
+            #lowval = PyPLC.negBinary(temp) 
 
-        #Build result
-        highval = highval + lowval
+        ##Build result
+        #highval = highval + lowval
 
-        sign = int(highval[0])
-        sign1 = 1 if not sign else -1
+        #sign = int(highval[0])
+        #sign1 = 1 if not sign else -1
 
-        expo = highval[1:9]
-        mant = '1' + highval[9:]
+        #expo = highval[1:9]
+        #mant = '1' + highval[9:]
 
-        ex = int(PyPLC.Exponent(expo))
-        si = float(PyPLC.Significand(mant))
-        argout= float(sign1*pow(2,ex)*si)
+        #ex = int(PyPLC.Exponent(expo))
+        #si = float(PyPLC.Significand(mant))
+        #argout= float(sign1*pow(2,ex)*si)
 
         return argout
         
@@ -600,7 +616,7 @@ class PyPLC(PyTango.Device_4Impl):
             'Coil':         lambda _addr:            self.Coil(_addr),
             'Coils':         lambda _addr,val:        self.Coils([_addr,val]),
             'Flag':         lambda _addr,val:        self.Flag([_addr,val]),
-            'IeeeFloat':     lambda _addr:            self.IeeeFloat(_addr),
+            'IeeeFloat':     lambda *args:            self.IeeeFloat(*args),
             'WriteFloat':     lambda _addr,val:        self.WriteFloat([_addr,val]),
             'WriteCoil':     lambda _addr,bit:        self.WriteCoil([_addr,bit]),
             'WriteFlag':     lambda _addr,bit,val:    self.WriteFlag([_addr,bit,val]),
@@ -619,6 +635,21 @@ class PyPLC(PyTango.Device_4Impl):
             }
             , useDynStates=True)
         self.call__init__(PyTango.Device_4Impl,cl,name)
+        
+    def exception_hook(self,fname=None,args=None,e=None):
+        self.last_exception = traceback.format_exc()
+        self.last_exception_time= time.time()        
+        fname = str(fname or type(self))
+        e = e or Exception(str(e))
+        args = str(args or [])
+        self.warning('Exception in %s(%s):\n%s'
+                     %(fname,args,self.last_exception))
+
+        if isinstance(e,PyTango.DevFailed):
+            PyTango.Except.throw_exception(str(e.args[0]['reason']),
+                str(e.args[0]['desc']),fname+':'+str(e.args[0]['origin']))
+        else:
+            PyTango.Except.throw_exception(str(e),"Something wrong!",fname)        
             
                 
 #------------------------------------------------------------------
@@ -847,44 +878,48 @@ class PyPLC(PyTango.Device_4Impl):
 #    argout: Float value of the combined two next Registers
 #------------------------------------------------------------------
     
-    def IeeeFloat(self,argin):
-        self.debug("In "+self.get_name()+"::IeeeFloat("+str(argin)+")")
-        argin = map(int,argin) if fun.isSequence(argin) else argin
-        try:
-            #First Parse the arguments (may be an array or an address to read
-            if isinstance(argin,list) and len(argin)>1:
-                arg=argin[:2]    
-            else:
-                if isinstance(argin,list):
-                     _addr=argin[0]
-                else: 
-                    _addr=argin
-                # The ReadHoldingRegisters Modbus Command 
-                # uses Arrays as both Argument In and Out
-                arr_argin=[_addr,2]
-                arg = self.sendModbusCommand("ReadHoldingRegisters",arr_argin)
-                
-            return self.Ints2Float(arg)
+    def IeeeFloat(self,*argin):
+        """
+        This method can be called with three diferent types of arguments:
         
-        except PyTango.DevFailed, e:
-            self.last_exception = traceback.format_exc()
-            self.last_exception_time= time.time()
-            self.warning('In IeeeFloat(%s):\n%s'%(argin,self.last_exception))
+            - integer address: It will read an IeeeFloat from 2 consecutive
+                Modbus Registers
+                
+            - an array of 2 integers: Skip modbus and call Ints2Float
             
-            #PyTango.Except.re_throw_exception(e,"DevFailed Exception",str(e),inspect.currentframe().f_code.co_name)
-            #PyTango.Except.throw_exception("PyPLC_DevFailed",str(e),inspect.currentframe().f_code.co_name)
-            PyTango.Except.throw_exception(str(e.args[0]['reason']),
-                        str(e.args[0]['desc']),
-                        inspect.currentframe().f_code.co_name+':'+
-                        str(e.args[0]['origin']))
+            - an array and an index: get first 2 integers from the array index
+        
+        """
+        self.debug("In "+self.get_name()+"::IeeeFloat("+str(argin)+")")
+        
+        try:
+            #Polimorphism (Tango commands will pass an array with all args)
+            if len(argin)==1: argin = argin[0]
+            
+            #Check for single Modbus address
+            if not fun.isSequence(argin):
+                argin = int(argin)
+            elif len(argin)==1:
+                argin = int(argin[0])
+                
+            #Get data from Modbus address via ReadHolginRegisters
+            if isinstance(argin,int):
+                arr_argin = [argin,2]
+                cmd = "ReadHoldingRegisters"
+                self.info('IeeeFloat(%s(%s))'%(cmd,arr_argin))
+                argin = self.sendModbusCommand(cmd,arr_argin)
+
+            #If not using Modbus, extract raw data from arguments
+            elif fun.isSequence(argin[0]):
+                i = int(argin[1])
+                argin = argin[0][i],argin[0][i+1]
+            else:
+                argin = argin[0],argin[1]
+                    
+            return self.Ints2Float(argin)
             
         except Exception,e:
-            self.last_exception = traceback.format_exc()
-            self.last_exception_time= time.time()
-            self.warning('In IeeeFloat(%s):\n%s'%(argin,self.last_exception))
-            
-            PyTango.Except.throw_exception(str(e),
-                    "Something wrong!",inspect.currentframe().f_code.co_name)
+            self.exception_hook(inspect.currentframe().f_code.co_name,argin,e)
 
 #------------------------------------------------------------------
 #    @mniegowski 
