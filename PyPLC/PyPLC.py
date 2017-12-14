@@ -604,36 +604,44 @@ class PyPLC(PyTango.Device_4Impl):
             status += '\n\nINITIALIZATION ERRORS:\n\t' + '\n\t'.join(self.init_errors)
         self.debug(status)
         return (state,status)
+    
+    def init_pyplc_lambdas(self,other=None):
+        self.PyPLC_LAMBDAS = {
+            'Reg':      (lambda _addr: self.Reg(_addr)),
+            'InputReg': (lambda _addr: self.InputReg(_addr)),
+            'Regs':     (lambda _addr,val: self.Regs([_addr,val])),
+            'InputRegs': (lambda _addr,val: self.InputRegs([_addr,val])),
+            'Regs32':   (lambda _addr,val: self.Regs([_addr,val])),
+            'Coil':     (lambda _addr: self.Coil(_addr)),
+            'Coils':    (lambda _addr,val: self.Coils([_addr,val])),
+            'Flag':     (lambda _addr,val: self.Flag([_addr,val])),
+            'IeeeFloat': (lambda *args: self.IeeeFloat(*args)),
+            'WriteFloat': (lambda _addr,val: self.WriteFloat([_addr,val])),
+            'WriteCoil': (lambda _addr,bit: self.WriteCoil([_addr,bit])),
+            'WriteFlag': (lambda _addr,bit,val: 
+                              self.WriteFlag([_addr,bit,val])),
+            #@TODO: WriteBit Must Be Deprecated!
+            'WriteBit': (lambda _addr,bit,val: 
+                             self.WriteFlag([_addr,bit,val])), 
+            'WriteInt': (lambda _addr,val: self.WriteInt([_addr,val])),
+            'WriteLong': (lambda _addr,val: self.WriteLong([_addr,val])),
+
+            'Bit':      (lambda number,val: self.Flag([number,val],HW=False)),            
+            'Denary2Binary': (lambda num: self.Denary2Binary(num)),
+            'Binary2Denary': (lambda bin: int(str(bin),2)),        
+            
+            'ReadMap': (lambda *args: self.ReadMap(*args)),
+            'Dec2Bits': (lambda dec,n=16: self.Dec2Bits(dec,n)),
+            'Dec2Bin': (lambda num: self.Denary2Binary(num)),
+            'Bin2Dec': (lambda bin: int(str(bin),2)),              
+            }
+        if other: 
+            self.PyPLC_LAMBDAS.update(other)
+        return self.PyPLC_LAMBDAS
             
     def init_parent_classes(self,cl,name):
-        self.call__init__(DynamicDS,cl,name,globals(),_locals=
-            {
-            'Reg':             lambda _addr:             self.Reg(_addr),
-            'InputReg':             lambda _addr:             self.InputReg(_addr),
-            'Regs':         lambda _addr,val:         self.Regs([_addr,val]),
-            'InputRegs':         lambda _addr,val:         self.InputRegs([_addr,val]),
-            'Regs32':         lambda _addr,val:         self.Regs([_addr,val]),
-            'Coil':         lambda _addr:            self.Coil(_addr),
-            'Coils':         lambda _addr,val:        self.Coils([_addr,val]),
-            'Flag':         lambda _addr,val:        self.Flag([_addr,val]),
-            'IeeeFloat':     lambda *args:            self.IeeeFloat(*args),
-            'WriteFloat':     lambda _addr,val:        self.WriteFloat([_addr,val]),
-            'WriteCoil':     lambda _addr,bit:        self.WriteCoil([_addr,bit]),
-            'WriteFlag':     lambda _addr,bit,val:    self.WriteFlag([_addr,bit,val]),
-            'WriteBit':     lambda _addr,bit,val:    self.WriteFlag([_addr,bit,val]), #WriteBit Must Be Deprecated!
-            'WriteInt':     lambda _addr,val:        self.WriteInt([_addr,val]),
-            'WriteLong':     lambda _addr,val:        self.WriteLong([_addr,val]),
-
-            'Bit':             lambda number,val:        self.Flag([number,val],HW=False),            
-            'Denary2Binary': lambda num:             self.Denary2Binary(num),
-            'Binary2Denary': lambda bin:            int(str(bin),2),        
-            
-            'ReadMap': lambda *args: self.ReadMap(*args),
-            'Dec2Bits': lambda dec,n=16: self.Dec2Bits(dec,n),
-            'Dec2Bin': lambda num: self.Denary2Binary(num),
-            'Bin2Dec': lambda bin: int(str(bin),2),              
-            }
-            , useDynStates=True)
+        self.call__init__(DynamicDS,cl,name,globals(),
+            _locals = self.init_pyplc_lambdas(), useDynStates=True)
         self.call__init__(PyTango.Device_4Impl,cl,name)
         
     def exception_hook(self,fname=None,args=None,e=None):
