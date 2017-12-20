@@ -397,6 +397,8 @@ class PyPLC(PyTango.Device_4Impl):
             result = self.dyn_types[attr].pytype(result) #Data conversion necessary to avoid numpy issues
             self.debug('Updating %s cached values ([%d])'%(attr,len(result)))
             self.dyn_values[attr].update(result,self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
+            self.dyn_values[attr].update(result,
+                self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
             self.MapDict[attr].data = self.dyn_values[attr].value
             self._locals[attr] = result
             
@@ -478,7 +480,10 @@ class PyPLC(PyTango.Device_4Impl):
                     self.last_exception,self.last_exception_time = 'DevFailed' in str(e) and str(e) or traceback.format_exc(),time.time()
                     (retries and self.debug or self.warning)(self.get_name()+"::sendModbusCommand: Exception!(%d retries left): %s" % (retries,str(e)))
                     if retries<=0:
-                        self.set_state(PyTango.DevState.UNKNOWN)
+                        if self.last_communication:
+                            self.set_state(PyTango.DevState.FAULT)
+                        else:
+                            self.set_state(PyTango.DevState.UNKNOWN)
                         self.last_failed=time.time()
                         #Between failed communications the retry frequency is reduced
                         if hasattr(self,'threadDict'): self.threadDict.set_timewait(max(1,self.ErrorTimeWait/1000.))
