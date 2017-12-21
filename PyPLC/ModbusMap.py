@@ -66,7 +66,7 @@ class ModbusArray(object):
           self.name,separator,self.formula = match_declaration(declaration).groups()
           self.attribute = '%s=list(long(r) for r in ReadMap("%s"))' % (self.name,self.name)
           if re.match('[\*]?/'+re_float,self.formula.split(',')[-1]):
-            self.period = 1e-3*fandango.str2float(self.formula.split(',')[-1])
+            self.period = fandango.str2float(self.formula.split(',')[-1])
             self.formula = self.formula.rsplit(',',1)[0]
           else: self.period = 0
         else:
