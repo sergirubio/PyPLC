@@ -330,6 +330,7 @@ class PyPLC(PyTango.Device_4Impl):
         if update: 
             if not getattr(self,'MapDict',None): self.MapDict = ModbusMap()
             else: self.MapDict.clear()
+            self.maps_failed = []
             target = self.MapDict
         else: target = ModbusMap()
         try:
@@ -358,6 +359,9 @@ class PyPLC(PyTango.Device_4Impl):
                 Due to Modbus limitations it splits this Map reading in sets of 125 registers.
         '''
         #self.debug('>'*80)
+        
+        #@TODO: THIS METHOD SEEMS TO TRIGGER MEMORY LEAKS!!!
+        
         t0 = time.time()
         if not args: raise Exception('ReadMap.ArgumentNeeded')
         result,attr = [],''
@@ -376,13 +380,15 @@ class PyPLC(PyTango.Device_4Impl):
             else: regs = ModbusArray.GetCommands4Map(*args)
             self.debug('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
             if hasattr(self,'threadDict'): #reading in background thread
+                self.info('... reading in background thread')
                 for reg in regs:
                     key = ','.join(str(r) for r in reg)
                     val = self.threadDict[key]
                     if isinstance(val,Exception):
                         raise Exception('Exception: %s[%s]: %s.' % (attr,key,str(val)) )
                     if val is None or not len(val):
-                        raise ModbusMapException('ReadMapException: %s[%s] values has not been read yet.' % (attr,key) )
+                        raise ModbusMapException('ReadMapException:'
+                            ' %s[%s] values has not been read yet.' % (attr,key) )
                     else:
                         result.extend(val)
                     #self.debug('Reading from ThreadDict[%s] = %s...'%(key,result[:10]))
@@ -396,7 +402,6 @@ class PyPLC(PyTango.Device_4Impl):
             self.dyn_values[attr].keep = True
             result = self.dyn_types[attr].pytype(result) #Data conversion necessary to avoid numpy issues
             self.debug('Updating %s cached values ([%d])'%(attr,len(result)))
-            self.dyn_values[attr].update(result,self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
             self.dyn_values[attr].update(result,
                 self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
             self.MapDict[attr].data = self.dyn_values[attr].value
@@ -582,6 +587,7 @@ class PyPLC(PyTango.Device_4Impl):
         self.debug('In PyPLC::StateMachine(%s,%s) ...'%(state,status[:80]))
         state,status = state or PyTango.DevState.ON, status or ''
         self.MAX_IDLE = 10*60
+        
         if not self.SimulationMode:
             if not self.modbus:
                 state = PyTango.DevState.UNKNOWN
@@ -599,14 +605,29 @@ class PyPLC(PyTango.Device_4Impl):
                 state = PyTango.DevState.INIT
                 status += 'Hardware not contacted yet.\n'+status
             else:
-                state = PyTango.DevState.ON
-                #status += '%s is ON.\n'%self.get_name()+status
+                self.maps_failed = []
+                if self.MapDict:
+                    for k,m in self.MapDict.items():
+                        regs = [self.threadDict.get(','.join(map(str,c)),None)
+                                 for c in m.commands]
+                        if not all(fun.isTrue(r) for r in regs):
+                            self.maps_failed.append(k)
+                if self.maps_failed:
+                    state = PyTango.DevState.FAULT
+                    status += ('Some Mappings are not available:\n\%s'
+                        % str(self.maps_failed)
+                        +'\n'+status)
+                else:
+                    state = PyTango.DevState.ON
+                    #status += '%s is ON.\n'%self.get_name()+status
+                    
         if str(state) not in ('UNKNOWN','FAULT','INIT') and self.last_exception_time<time.time()-600:
             self.last_exception,self.last_exception_time = '',0
         elif self.last_exception:
             status += '\nLast PyPLC Exception was at %s: \n%s' % (time.ctime(self.last_exception_time),str(self.last_exception)[:1000])
         if self.init_errors: 
             status += '\n\nINITIALIZATION ERRORS:\n\t' + '\n\t'.join(self.init_errors)
+
         self.debug(status)
         return (state,status)
     
@@ -703,8 +724,12 @@ class PyPLC(PyTango.Device_4Impl):
         if get_properties: self.get_device_properties(self.get_device_class())
         self.setLogLevel(self.LogLevel)
         
-        #The STATE_MACHINE_PERIOD will control how frequently PyPLC.StateMachine will be called (within always_executed_hook)
-        self.PollingCycle = max((self.KeepTime,self.get_polled_attrs().get('state',1000.))) #used to control frequency of polling status log
+        #The STATE_MACHINE_PERIOD will control how frequently 
+        #PyPLC.StateMachine will be called (within always_executed_hook)
+        #used to control frequency of polling status log
+        self.PollingCycle = max(
+            (self.KeepTime,self.get_polled_attrs().get('state',1000.))) 
+        
         self.STATE_MACHINE_PERIOD = self.PollingCycle/1e3
 
         # INITIALIZING MODBUS CONNNECTION
@@ -777,11 +802,17 @@ class PyPLC(PyTango.Device_4Impl):
                     if v.checked() and self.dyn_values[k].date<(now-self.KeepTime/1e3): 
                         self.debug('In always_executed_hook(): Map "%s" has new data'%k)
                         self.ReadMap(k)
-            except ModbusMapException,e: self.warning("In "+self.get_name()+"::always_executed_hook():"+'Unable to update mappings: %s'%e)
-            except: self.warning("In "+self.get_name()+"::always_executed_hook():"+'Unable to update mappings:\n%s'%traceback.format_exc())
+            except ModbusMapException,e: 
+                self.warning("In "+self.get_name()+"::always_executed_hook():"
+                             +'Unable to update mappings: %s'%e)
+            except: 
+                self.warning("In "+self.get_name()+"::always_executed_hook():"
+                             +'Unable to update mappings:\n%s'
+                             %traceback.format_exc())
                 
             #State is evaluated just once per second (KeepTime property value)
-            if now>(self.last_state_machine+self.STATE_MACHINE_PERIOD):
+            if now > (self.last_state_machine+self.STATE_MACHINE_PERIOD):
+                
                 prev,self.last_state_machine = self.get_state(),now
                 #self.set_state(PyTango.DevState.ON),self.set_status('') #Default PyPLC State
                 DynamicDS.always_executed_hook(self) #<= DynamicStates disabled here
@@ -789,11 +820,15 @@ class PyPLC(PyTango.Device_4Impl):
                 if self.dyn_states: 
                     state0 = DynamicDS.check_state(self,set_state=False,current=state0)
                     self.debug('DynamicStates: %s(%s)'%(type(state0),state0))
-                if self.DynamicStatus: status0 = DynamicDS.check_status(self)
+                    
+                if self.DynamicStatus: 
+                    status0 = DynamicDS.check_status(self)
+                    
                 state,status = self.StateMachine(state0,'')#,status0) #Communication errors override DynamicStates machine
                 if state!=state0: self.debug('StateMachine: %s(%s)'%(type(state),state))
                 txt = 'Device is in %s State'%str(state)
                 self.set_status(txt+'\n'+status if txt not in status else status)
+                
                 if prev!=state:
                     comment = '%s.State changed: %s => %s => %s'%(self.get_name(),str(prev),str(state0),str(state))
                     try: self.SaveSnapFile(comment=comment)
@@ -801,6 +836,7 @@ class PyPLC(PyTango.Device_4Impl):
                     self.info( '*'*80)
                     self.info(comment)
                     self.info( '*'*80)
+                    
                 self.set_state(state,push=True) #it must not be in the if!, Events will be pushed here
                 self.debug('StateMachine took %d ms' % (1000*(time.time()-now)))
         
