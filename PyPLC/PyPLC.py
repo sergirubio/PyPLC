@@ -226,7 +226,6 @@ class PyPLC(PyTango.Device_4Impl):
         """ Converts an array of 2 integers into an IeeeFloat number """
 
         reg1,reg2 = int(arg[0]),int(arg[1])
-        print('>'*80)
         import struct,traceback
         try:
             p = struct.pack('hh', reg1, reg2)
@@ -369,16 +368,22 @@ class PyPLC(PyTango.Device_4Impl):
         # If the argument is the name of a Mapping we replace args and attr_name
         if args[0] in self.MapDict: 
             attr,args = args[0],[self.MapDict[args[0]].formula]
+            
+        #!debug
+        if attr == 'AnalogRealsREAD': 
+            self.info('>'*80)            
+            
         # If first argument is not in map format, we evaluate it
         if len(args)==1 and isString(args[0]) and not ModbusArray.is_valid_map(args[0]):
             self.info('ReadMap(%s): Unrecognized format, returning a pure evaluation.'%args)
             result = self.evalAttr(args[0])
+            
         #Matching a declared mapping, two addresses or a list of Reg commands
         else:
-            self.debug('In ReadMap(%s,%s)'%(attr,args))
+            self.info('In ReadMap(%s,%s)'%(attr,args))
             if attr: regs = self.MapDict[attr].commands
             else: regs = ModbusArray.GetCommands4Map(*args)
-            self.debug('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
+            self.info('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
             if hasattr(self,'threadDict'): #reading in background thread
                 self.info('... reading in background thread')
                 for reg in regs:
@@ -394,21 +399,21 @@ class PyPLC(PyTango.Device_4Impl):
                     #self.debug('Reading from ThreadDict[%s] = %s...'%(key,result[:10]))
             else: #reading registers immediately
                 [result.extend(self.Regs([addr,length])) for addr,length in regs]
-                self.debug('Reading from Modbus(%s) = %s ...' % (regs,result[:10]))
+                self.info('Reading from Modbus(%s) = %s ...' % (regs,result[:10]))
             
         #Keeping the value of Mapping for further reuse; even if the rest of attributes are not kept
         if attr in self.MapDict:
             #########################################################################
             self.dyn_values[attr].keep = True
             result = self.dyn_types[attr].pytype(result) #Data conversion necessary to avoid numpy issues
-            self.debug('Updating %s cached values ([%d])'%(attr,len(result)))
+            self.info('Updating %s cached values ([%d])'%(attr,len(result)))
             self.dyn_values[attr].update(result,
                 self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
             self.MapDict[attr].data = self.dyn_values[attr].value
             self._locals[attr] = result
             
             self.MapDict[attr].uncheck()
-        self.debug( "Out of ReadMap(%s), it took %d ms" % (args,1e3*(time.time()-t0)))
+        self.info( "Out of ReadMap(%s), it took %d ms" % (args,1e3*(time.time()-t0)))
         return result
                 
     # -------------------------------------------------------------------------                
