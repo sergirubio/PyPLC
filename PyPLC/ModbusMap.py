@@ -79,18 +79,54 @@ class ModbusArray(object):
         self.flag = False
         self.time = 0
         self.data = []
+        self.callbacks = None
         
     @classmethod
     def is_valid_map(self,formula):
         return match_2_addresses(formula) or find_all_Regs(formula) or find_all_Reg(formula)
     
-    def check(self):
+    def subscribe(self,key,callback):
+        """
+        Callbacks could be a tuple of (reg0, reg1, reg2, callable)
+        If just a callable is passed, then it is executed for any register
+        """
+        if self.callbacks is None:
+            self.callbacks = fandango.CaselessDict()
+        if key not in self.callbacks:
+            self.callbacks[key] = callback
+            
+    #@fandango.Cached(depth=50,expire=0.2)
+    def trigger_callbacks(self,regs = None):
+        if not self.callbacks: 
+            return
+        for key,cb in self.callbacks.items():
+            try:
+                if fun.isSequence(cb):
+                    if not regs or any(r in cb for r in regs):
+                        cb = cb[-1]
+                    else:
+                        continue
+                print('%s: %s.trigger(%s): callback(?%s)' % 
+                      (fun.time2str(),self,key,regs))
+                if fun.isCallable(cb):
+                    cb(key)
+                else:
+                    cb = getattr(cb,'push_event',
+                        getattr(cb,'event_received',None))
+                    cb and cb(key)
+                    
+            except Exception as e:
+                print('%s.callback(%s): %s' % (self,cb,e))        
+    
+    def check(self,regs = None):
         """ 
         This flag marks some of the registers to have been just updated, 
         so ReadMap() should be called to update the array
         """
         self.flag = True
         self.time = time.time()
+        return self.flag
+                
     def uncheck(self):
         self.flag = False
     def checked(self):
@@ -181,7 +217,8 @@ class ModbusMap(object):
         self.start = None
         self.end = None
         self.default = 0
-        if property is not None: self.load(property)
+        if property is not None: 
+            self.load(property)
         
     def trace(self,msg,level=0):
         if level<=self.loglevel: print '%s ModbusMap: %s'%(fun.time2str(),msg)
@@ -221,7 +258,7 @@ class ModbusMap(object):
         else:
             return buf
     
-    def check(self,regs):
+    def check(self,regs=None):
         """
         This method is call from sendModbusCommand().
         Once a register is updated, all maps containing it are checked to be updated in client side.
@@ -233,8 +270,7 @@ class ModbusMap(object):
             for c in v.commands:
                 if c[0]<=reg<(c[0]+c[1]):
                     self.trace('In check(%s): %s Read Flag Active'%(regs,k))
-                    v.flag=True
-                    result = True
+                    result = v.check()
                     break #Check next map
         return result
 
