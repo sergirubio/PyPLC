@@ -106,8 +106,8 @@ class ModbusArray(object):
                         cb = cb[-1]
                     else:
                         continue
-                print('%s: %s.trigger(%s): callback(?%s)' % 
-                      (fun.time2str(),self,key,regs))
+                #print('%s: %s.trigger(%s): callback(%s)' % 
+                      #(fun.time2str(),self,key,regs or ''))
                 if fun.isCallable(cb):
                     cb(key)
                 else:

@@ -108,7 +108,9 @@ from fandango import DynamicDS,DynamicDSClass,Logger,\
   getLastException,Catched,printf
 import fandango.functional as fun
 from fandango.functional import *
+from fandango.objects import Cached
 
+from PyTango import DevState
 from ModbusMap import ModbusMap,ModbusArray,ModbusMapException
 
 #Patches between PyTango3 and PyTango7
@@ -346,51 +348,63 @@ class PyPLC(PyTango.Device_4Impl):
         self.info("Mapping's read are: %s"%str(mapdict))
         return mapdict
         
-    def ReadMap(self,*args):
+    @Cached(depth=100,expire=0.05,log=True)
+    def ReadMap(self,*args,**kwargs):
         '''
         Possible arguments are:
+
             1 string matching the name of a Mapping:
                 The formula declared for Mapping will be used for the declaration
+
             1 string containing Regs() commands:
                 The string is used like a simple attribute declaration; the attribute is evaluated.        
+
             2 integers (in 2 variables or in a list or tuple):
                 These are understood as the starting and ending address to be read.
                 Due to Modbus limitations it splits this Map reading in sets of 125 registers.
+
+            callbacks = True/False; whether to call callbacks for this map
         '''
         #self.debug('>'*80)
         
         #@TODO: THIS METHOD SEEMS TO TRIGGER MEMORY LEAKS!!!
         
+        callbacks = kwargs.get('callbacks',False)
         t0 = time.time()
         if not args: raise Exception('ReadMap.ArgumentNeeded')
         result,attr = [],''
         
         # If the argument is the name of a Mapping we replace args and attr_name
+        ## as called from always_executed_hook
         if args[0] in self.MapDict: 
             attr,args = args[0],[self.MapDict[args[0]].formula]
             
         #!debug
         if attr == 'AnalogRealsREAD': 
-            self.info('>'*80)            
+            self.debug('>'*80)            
             
         # If first argument is not in map format, we evaluate it
         if len(args)==1 and isString(args[0]) and not ModbusArray.is_valid_map(args[0]):
-            self.info('ReadMap(%s): Unrecognized format, returning a pure evaluation.'%args)
+            self.debug('ReadMap(%s): Unrecognized format, returning a pure evaluation.'%args)
             result = self.evalAttr(args[0])
             
         #Matching a declared mapping, two addresses or a list of Reg commands
         else:
-            self.info('In ReadMap(%s,%s)'%(attr,args))
-            if attr: regs = self.MapDict[attr].commands
-            else: regs = ModbusArray.GetCommands4Map(*args)
-            self.info('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
+            self.debug('In ReadMap(%s,%s,%s)'%(attr,args,callbacks))
+            if attr: 
+                regs = self.MapDict[attr].commands
+            else: 
+                regs = ModbusArray.GetCommands4Map(*args)
+
+            self.debug('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
             if hasattr(self,'threadDict'): #reading in background thread
-                self.info('... reading in background thread')
+                self.debug('... reading in background thread')
                 for reg in regs:
                     key = ','.join(str(r) for r in reg)
                     val = self.threadDict[key]
                     if isinstance(val,Exception):
                         raise Exception('Exception: %s[%s]: %s.' % (attr,key,str(val)) )
+
                     if val is None or not len(val):
                         raise ModbusMapException('ReadMapException:'
                             ' %s[%s] values has not been read yet.' % (attr,key) )
@@ -399,21 +413,35 @@ class PyPLC(PyTango.Device_4Impl):
                     #self.debug('Reading from ThreadDict[%s] = %s...'%(key,result[:10]))
             else: #reading registers immediately
                 [result.extend(self.Regs([addr,length])) for addr,length in regs]
-                self.info('Reading from Modbus(%s) = %s ...' % (regs,result[:10]))
+                self.debug('Reading from Modbus(%s) = %s ...' % (regs,result[:10]))
             
         #Keeping the value of Mapping for further reuse; even if the rest of attributes are not kept
         if attr in self.MapDict:
             #########################################################################
             self.dyn_values[attr].keep = True
             result = self.dyn_types[attr].pytype(result) #Data conversion necessary to avoid numpy issues
-            self.info('Updating %s cached values ([%d])'%(attr,len(result)))
+            prev = self.dyn_values[attr].value
+            changed = len(prev or [])!=len(result or []) or any(v!=vv for v,vv in zip(prev,result))
+            self.debug('Updating %s cached values ([%d],%s)'%(attr,len(result),changed))
             self.dyn_values[attr].update(result,
                 self.MapDict[attr].time,PyTango.AttrQuality.ATTR_VALID)
             self.MapDict[attr].data = self.dyn_values[attr].value
             self._locals[attr] = result
             
+            if changed and callbacks:
+                if self.MapDict[attr].callbacks is None:
+                    for k,v in self.dyn_values.items():
+                        if attr in v.dependencies:
+                            self.info('Add %s to %s callbacks' % (k,attr))
+                            self.MapDict[attr].subscribe(k,self.evalAttr)
+            
+                if self.MapDict[attr].callbacks:
+                    self.info('Trigger %s callbacks: %s' % (attr,self.MapDict[attr].callbacks.keys()))
+                    self.MapDict[attr].trigger_callbacks()
+            
             self.MapDict[attr].uncheck()
-        self.info( "Out of ReadMap(%s), it took %d ms" % (args,1e3*(time.time()-t0)))
+
+        self.debug( "Out of ReadMap(%s), it took %d ms" % (args,1e3*(time.time()-t0)))
         return result
                 
     # -------------------------------------------------------------------------                
@@ -481,9 +509,19 @@ class PyPLC(PyTango.Device_4Impl):
                                     raise Exception,'ModbusException_%s'%(str(e).replace('\n','')[:100])
                             finally:
                                 self.modbusLock.release()
+                                
                     if self.MapDict: 
                         reg = arr_argin[0] if fun.isIterable(arr_argin) else arr_argin
-                        [v.check() for v in self.MapDict.values() if v.has_address(reg)]
+                        for k,v in self.MapDict.items():
+                            if v.has_address(reg):
+                                v.check()
+                                if (self.get_state() not in (DevState.INIT, DevState.UNKNOWN) \
+                                    and time.time()>self.time0 + 2e-3*self.DEFAULT_POLLING_PERIOD):
+                                    try:
+                                        self.ReadMap(k,callbacks=True)
+                                    except Exception as e:
+                                        self.warning('unable to readmap(%s):\n%s'%(k,traceback.format_exc()))
+                                
                     self.last_exception = ''
                 except Exception,e:
                     retries-=1
@@ -617,7 +655,7 @@ class PyPLC(PyTango.Device_4Impl):
                                  for c in m.commands]
                         if not all(fun.isTrue(r) for r in regs):
                             self.maps_failed.append(k)
-                if self.maps_failed:
+                if self.maps_failed and state!=PyTango.DevState.INIT:
                     state = PyTango.DevState.FAULT
                     status += ('Some Mappings are not available:\n\%s'
                         % str(self.maps_failed)
@@ -726,7 +764,7 @@ class PyPLC(PyTango.Device_4Impl):
         print "In ", self.get_name(), "::init_device()"
         self.init_errors = []
         self.set_state(PyTango.DevState.UNKNOWN)
-        if get_properties: self.get_device_properties(self.get_device_class())
+        if get_properties: self.get_DynDS_properties()
         self.setLogLevel(self.LogLevel)
         
         #The STATE_MACHINE_PERIOD will control how frequently 
@@ -776,7 +814,8 @@ class PyPLC(PyTango.Device_4Impl):
             if self.modbus and hasattr(self,'ModbusCacheConfig') and self.ModbusCacheConfig:
                 self.SetModbusCacheConfig()
             else: self.warning("ModbusCacheConfig Property has not been defined")                
-            if check_polled: self.check_polled_attributes(new_attr=dict.fromkeys(self.MapDict.keys(),3000))
+            if check_polled: 
+                self.check_polled_attributes(new_attr=dict.fromkeys(self.MapDict.keys(),3000))
             self.initThreadDict()
         
         self.info('PyPLC Ready to accept request ...')
@@ -800,25 +839,28 @@ class PyPLC(PyTango.Device_4Impl):
         try:
             self.debug("In "+self.get_name()+"::always_executed_hook()"+"<"*40)
             now = time.time()
+            prev = self.get_state()
             
-            #Updating Mapping values
-            try:
-                for k,v in self.MapDict.items():
-                    if v.checked() and self.dyn_values[k].date<(now-self.KeepTime/1e3): 
-                        self.debug('In always_executed_hook(): Map "%s" has new data'%k)
-                        self.ReadMap(k)
-            except ModbusMapException,e: 
-                self.warning("In "+self.get_name()+"::always_executed_hook():"
-                             +'Unable to update mappings: %s'%e)
-            except: 
-                self.warning("In "+self.get_name()+"::always_executed_hook():"
-                             +'Unable to update mappings:\n%s'
-                             %traceback.format_exc())
+            #Updating Mapping values, moved to SendModbusCommand
+            #try:
+                ## Wait 1 polling period before evaluating arrays
+                #if now>self.time0 + 2e-3*self.DEFAULT_POLLING_PERIOD:
+                    #for k,v in self.MapDict.items():
+                        #if v.checked() and self.dyn_values[k].date<(now-self.KeepTime/1e3): 
+                            #self.info('In always_executed_hook(): Map "%s" has new data'%k)
+                            #self.ReadMap(k,callbacks=False)
+            #except ModbusMapException,e: 
+                #self.warning("In "+self.get_name()+"::always_executed_hook():"
+                             #+'Unable to update mappings: %s'%traceback.format_exc())
+            #except: 
+                #self.warning("In "+self.get_name()+"::always_executed_hook():"
+                             #+'Unable to update mappings:\n%s'
+                             #%traceback.format_exc())
                 
             #State is evaluated just once per second (KeepTime property value)
             if now > (self.last_state_machine+self.STATE_MACHINE_PERIOD):
                 
-                prev,self.last_state_machine = self.get_state(),now
+                self.last_state_machine = now
                 #self.set_state(PyTango.DevState.ON),self.set_status('') #Default PyPLC State
                 DynamicDS.always_executed_hook(self) #<= DynamicStates disabled here
                 state0,status0 = self.get_state(),self.get_status() #For Logging purposes
