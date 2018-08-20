@@ -369,7 +369,7 @@ class PyPLC(PyTango.Device_4Impl):
         
         #@TODO: THIS METHOD SEEMS TO TRIGGER MEMORY LEAKS!!!
         
-        callbacks = kwargs.get('callbacks',False)
+        callbacks = kwargs.get('callbacks',self.check_attribute_events('State'))
         t0 = time.time()
         if not args: raise Exception('ReadMap.ArgumentNeeded')
         result,attr = [],''
@@ -378,14 +378,11 @@ class PyPLC(PyTango.Device_4Impl):
         ## as called from always_executed_hook
         if args[0] in self.MapDict: 
             attr,args = args[0],[self.MapDict[args[0]].formula]
-            
-        #!debug
-        if attr == 'AnalogRealsREAD': 
-            self.debug('>'*80)            
+                  
             
         # If first argument is not in map format, we evaluate it
         if len(args)==1 and isString(args[0]) and not ModbusArray.is_valid_map(args[0]):
-            self.debug('ReadMap(%s): Unrecognized format, returning a pure evaluation.'%args)
+            self.debug('ReadMap(%s,%s): Unrecognized format, returning a pure evaluation.'%(args,callbacks))
             result = self.evalAttr(args[0])
             
         #Matching a declared mapping, two addresses or a list of Reg commands
@@ -680,6 +677,7 @@ class PyPLC(PyTango.Device_4Impl):
             'InputReg': (lambda _addr: self.InputReg(_addr)),
             'Regs':     (lambda _addr,val: self.Regs([_addr,val])),
             'InputRegs': (lambda _addr,val: self.InputRegs([_addr,val])),
+            'InputStatus': (lambda _addr,val: self.InputStatus([_addr,val])),            
             'Regs32':   (lambda _addr,val: self.Regs([_addr,val])),
             'Coil':     (lambda _addr: self.Coil(_addr)),
             'Coils':    (lambda _addr,val: self.Coils([_addr,val])),
@@ -1124,6 +1122,24 @@ class PyPLC(PyTango.Device_4Impl):
         """
         argout = self.sendModbusCommand("ReadInputRegisters",arr_argin)
         return argout        
+
+
+#------------------------------------------------------------------
+#   
+#    InputStatus command:
+#
+#    Description
+#    argin: Modbus Address, Number of Registers
+#    argout:Read Values Array
+#------------------------------------------------------------------
+
+    def InputStatus(self,arr_argin):
+        """
+        The ReadHoldingRegisters Modbus Command uses Arrays as both Argument In and Out
+        :param arr_argin: [_addr,n]
+        """
+        argout = self.sendModbusCommand("ReadInputStatus",arr_argin)
+        return argout 
 
 
 #------------------------------------------------------------------
@@ -1586,6 +1602,9 @@ class PyPLCClass(PyTango.PyDeviceClass):
         'InputRegs':
             [[PyTango.DevVarShortArray, "Modbus Address, Nb of Registers"],
             [PyTango.DevVarShortArray, "Spectrum of read Values"]],            
+        'InputStatus':
+            [[PyTango.DevVarShortArray, "Modbus Address, Nb of Registers"],
+            [PyTango.DevVarShortArray, "Spectrum of read Values"]], 
         'Regs32':
             [[PyTango.DevVarShortArray, "Modbus Address, Nb of Registers"],
             [PyTango.DevVarLongArray, "Spectrum of read Values"]],
