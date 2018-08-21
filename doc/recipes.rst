@@ -100,3 +100,16 @@ Si lo prefieres puedes usar esta sintaxis::
 
   CmdDisableValuep = str( WriteFlag(21,7,1) if not Bit(DigitalsREAD[20],7) else 'already disabled' )
   CmdEnableValue = str( WriteFlag(21,7,1) if Bit(DigitalsREAD[20],7) else 'already enabled' )
+  
+UseEvents
+---------
+
+Events can be enabled with properties::
+
+  UseEvents *:True
+  CheckDependencies: True
+  
+This will trigger push event on any change of the attributes. In case of using attribute config (absolute, relative changes) it will be used to filter events before pushing.
+
+If Mappings and Dependencies are used, each Mapping reading will trigger an update of its dependent attribute values and a subsequent event pushing. Thus, polling for all attributes is not needed (although it may be needed for Mappings if those do not follow the <Addr>,<+Offset>,<\period> format.
+
