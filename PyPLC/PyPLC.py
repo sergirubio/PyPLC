@@ -1436,7 +1436,7 @@ class PyPLC(PyTango.Device_4Impl):
         """
         try:
             filename = (argin.strip() or self.SnapFile)
-            if filename.strip('#').lower() not in ('no','none','false'):
+            if filename.strip('#').lower() not in ('no','none','false',''):
                 
                 date = fandango.time2str().replace('-','').replace(':','').replace(' ','')
                 device = self.get_name().replace('/','_').replace('-','_').upper()
