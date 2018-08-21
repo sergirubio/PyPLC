@@ -104,7 +104,7 @@ Si lo prefieres puedes usar esta sintaxis::
 UseEvents
 ---------
 
-Events can be enabled with properties
+Events can be enabled with properties::
 
   UseEvents *:True
   CheckDependencies: True
