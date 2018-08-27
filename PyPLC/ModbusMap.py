@@ -47,6 +47,8 @@ class ModbusArray(object):
         a pair of addresses: DigitalsREAD=0,100
         an address range: DigitalsREAD=0,+100
         forcing a periodic update (in seconds): DigitalsWRITE=0,100,/30
+        setting an specific command: 
+            Mapping=0,100,InputStatus or ...=0,100,/30,InputStatus
     
     This class will also store the Modbus commands used to update the array
     and the start/length addresses.
@@ -63,19 +65,35 @@ class ModbusArray(object):
         #self.formula contains the previous content of a MapDict
         match = match_declaration(declaration)
         if match:
-            self.name,separator,self.formula = match_declaration(declaration).groups()
-            self.attribute = '%s=list(long(r) for r in ReadMap("%s"))' % (self.name,self.name)
-            if self.formula.count(',')>1 and re.match('[\*]?/'+re_float,self.formula.split(',')[2]):
-                self.period = fandango.str2float(self.formula.split(',')[2])
-                self.formula = ','.join(self.formula.split(',')[:2])
+            
+            self.name,separator,self.formula = match_declaration(
+                declaration).groups()
+            self.attribute = '%s=list(long(r) for r in ReadMap("%s"))' % (
+                self.name,self.name)
+            split = self.formula.split(',')
+            
+            if len(split)>2 and re.match('[\*]?/'+re_float,split[2]):
+                self.period = fandango.str2float(split[2])
+                self.formula = ','.join(split[:2])
             else: 
                 self.period = 0
+                
+            if len(split)>2 and fun.clmatch('[a-zA-Z]+',split[-1]):
+                self.command = split[-1]
+            else:
+                self.command = ''
+            
         else:
             print('ModbusMap> Wrong Definition!: %s'+declaration)
-            self.name,separator,self.formula,self.period,self.attribute = '','','',0,'...'
-        self.commands = [] if not self.formula else self.GetCommands4Map(self.formula)
-        self.start = min(c[0] for c in self.commands) if self.commands else None
-        self.length = sum(c[1] for c in self.commands) if self.commands else None
+            self.name,separator,self.formula = '','',''
+            self.period,self.attribute = 0,'...'
+            
+        self.commands = [] if not self.formula \
+            else self.GetCommands4Map(self.formula,command=self.command)
+        self.start = min(c[0] for c in self.commands) \
+                                if self.commands else None
+        self.length = sum(c[1] for c in self.commands) \
+                                if self.commands else None
         self.end = self.start+self.length if self.commands else None
         self.flag = False
         self.time = 0
@@ -158,7 +176,7 @@ class ModbusArray(object):
         self.data[i] = j
     
     @classmethod
-    def GetCommands4Map(self,*args):
+    def GetCommands4Map(self,*args,**kwargs):
         '''
         Possible arguments are:
             2 integers (in 2 variables or in a list or tuple):
@@ -198,6 +216,9 @@ class ModbusArray(object):
                 result.append((int(addr1+send),
                     int(size-send if (size-send)<value else value),))
                 
+        if kwargs.get('command'):
+            result = [(t[0],t[1],kwargs.get('command')) for t in result]
+                
         return result
         
     def trace(self,msg,level=0):
@@ -223,7 +244,7 @@ class ModbusArray(object):
 class ModbusMap(object):
     """ 
     This class will be initialized from Mappings property of a PyPLC.
-    It will provide all methods to get value of mapped addresses and mapped arrays.
+    It will provide all methods to get mapped addresses and mapped arrays.
     
     MyMap = ModbusMap(['DigitalsREAD=0,+100'])
     DigitalsREAD = MyModbusMap['DigitalsREAD'] #It will return an ModbusArray
@@ -234,6 +255,8 @@ class ModbusMap(object):
         self.loglevel = loglevel
         self.start = None
         self.end = None
+        self.command = ''
+        self.period = 0
         self.default = 0
         if property is not None: 
             self.load(property)
@@ -242,7 +265,10 @@ class ModbusMap(object):
         if level<=self.loglevel: print '%s ModbusMap: %s'%(fun.time2str(),msg)
         
     def load(self,property):
-        """ This method initializes mapping keys from a property value (string list)"""
+        """ 
+        This method initializes mapping keys from 
+        a property value (string list)
+        """
         for line in map(str,property):
             if '#' in line: line = line.split('#')[0]
             line = line.strip()
@@ -250,8 +276,10 @@ class ModbusMap(object):
             #self.trace("Adding Mapping Variable: '%s'" % (line) )
             newmap = ModbusArray(line)
             self.mappings[newmap.name] = newmap
-            self.start = newmap.start if self.start is None else min((newmap.start,self.start))
-            self.end = newmap.end if self.end is None else max((newmap.end,self.end))
+            self.start = newmap.start if self.start is None \
+                else min((newmap.start,self.start))
+            self.end = newmap.end if self.end is None \
+                else max((newmap.end,self.end))
         pass
     
     def load_from_device(self,device):
@@ -279,7 +307,8 @@ class ModbusMap(object):
     def check(self,regs=None):
         """
         This method is call from sendModbusCommand().
-        Once a register is updated, all maps containing it are checked to be updated in client side.
+        Once a register is updated, all maps containing it are checked to be 
+        updated in client side.
         """
         reg = regs[0] if fun.isIterable(regs) else regs
         result = False
