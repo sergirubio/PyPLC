@@ -286,23 +286,30 @@ class PyPLC(PyTango.Device_4Impl):
     
     def initThreadDict(self):
         """
-        It creates a ThreadDict, a dictionary of modbus commands which results will be updated periodically.
+        It creates a ThreadDict, a dictionary of modbus commands 
+        which results will be updated periodically.
         All registers used by Mappings are by default added as keys.
         For each key it will execute a ReadHoldingRegisters modbus command,
         """
         def read_method(args,comm=self.Regs,log=self.debug):
             try:
                 #log('>'*20 + ' In ThreadDict.read_method(%s)' % args)
-                args = [int(s) for s in args.split(',')[:2]]
-                ## NOTE THAT ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
+                args = args.split(',')
+                # args = Address, Length <, Command>
+                args = [int(s) for s in args[:2]]+[s for s in args[2:]]
+                ## ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
                 # So, asynch=False here will stop the thread and read nothing
                 result = comm(args,asynch=True)
                 return result
             except PyTango.DevFailed,e:
-                print 'Exception in ThreadDict.read_method!!!'+'\n'+str(e).replace('\n','')[:100]
+                print('Exception in ThreadDict.read_method!!!'
+                    +'\n'+str(e).replace('\n','')[:100])
             except Exception,e:
-                print '#'*80+'\n'+'Exception in ThreadDict.read_method!!!'+'\n'+traceback.format_exc()+'\n'+'#'*80
-                return [] ## Arrays must not be readable if communication doesn't work!!!!
+                print('#'*80+'\n'+'Exception in ThreadDict.read_method!!!'
+                      +'\n'+traceback.format_exc()+'\n'+'#'*80)
+                # Arrays shouldnt be readable if communication doesn't work!
+                return [] 
+            
         self.threadDict = fandango.ThreadDict(
             read_method = read_method,
             timewait=max(0.01,self.ModbusTimeWait/1000.)
@@ -341,6 +348,7 @@ class PyPLC(PyTango.Device_4Impl):
                     for a in (self.DynamicAttributes,self.StaticAttributes):
                         if v.attribute not in a: a.append(v.attribute)
                 self._locals['MapDict'] = self._locals['Mapping'] = self.MapDict
+                
         except Exception,e:
             error = 'Unable to parse Mapping Property: %s'%(traceback.format_exc())
             self.init_errors.append(error), self.error(error)
@@ -410,7 +418,9 @@ class PyPLC(PyTango.Device_4Impl):
                         result.extend(val)
                     #self.debug('Reading from ThreadDict[%s] = %s...'%(key,result[:10]))
             else: #reading registers immediately
-                [result.extend(self.Regs([addr,length])) for addr,length in regs]
+                for t in regs:
+                    c = getattr(self,t[2]) if len(t==3) else self.Regs
+                    result.extend(c([t[0],t[1]]))
                 self.debug('Reading from Modbus(%s) = %s ...' % (regs,result[:10]))
             
         #Keeping the value of Mapping for further reuse; even if the rest of attributes are not kept
@@ -485,7 +495,7 @@ class PyPLC(PyTango.Device_4Impl):
         
         try:            
             ## If it is an external command (Synchronous) the threadDict must be stop to execute the external command first.
-            ## NOTE THAT ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
+            ## ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
             if not asynch and hasattr(self,'threadDict'): 
                 self.threadDict.stop()        
             while retries:
@@ -1116,7 +1126,12 @@ class PyPLC(PyTango.Device_4Impl):
         The DefaultReadCommand Modbus Command uses Arrays as both Argument In and Out
         :param arr_argin: [_addr,n]
         """
-        argout = self.sendModbusCommand(self.DefaultReadCommand,arr_argin,asynch=asynch)
+        if len(arr_argin)==3 and not isNumber(arr_argin[2]):
+            comm,arr_argin = arr_argin[2],arr_argin[:2]
+        else:
+            comm = self.DefaultReadCommand
+            
+        argout = self.sendModbusCommand(comm,arr_argin,asynch=asynch)
         return argout
     
 #------------------------------------------------------------------
