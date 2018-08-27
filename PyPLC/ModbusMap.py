@@ -63,15 +63,16 @@ class ModbusArray(object):
         #self.formula contains the previous content of a MapDict
         match = match_declaration(declaration)
         if match:
-          self.name,separator,self.formula = match_declaration(declaration).groups()
-          self.attribute = '%s=list(long(r) for r in ReadMap("%s"))' % (self.name,self.name)
-          if re.match('[\*]?/'+re_float,self.formula.split(',')[-1]):
-            self.period = fandango.str2float(self.formula.split(',')[-1])
-            self.formula = self.formula.rsplit(',',1)[0]
-          else: self.period = 0
+            self.name,separator,self.formula = match_declaration(declaration).groups()
+            self.attribute = '%s=list(long(r) for r in ReadMap("%s"))' % (self.name,self.name)
+            if self.formula.count(',')>1 and re.match('[\*]?/'+re_float,self.formula.split(',')[2]):
+                self.period = fandango.str2float(self.formula.split(',')[2])
+                self.formula = ','.join(self.formula.split(',')[:2])
+            else: 
+                self.period = 0
         else:
-          print('ModbusMap> Wrong Definition!: %s'+declaration)
-          self.name,separator,self.formula,self.period,self.attribute = '','','',0,'...'
+            print('ModbusMap> Wrong Definition!: %s'+declaration)
+            self.name,separator,self.formula,self.period,self.attribute = '','','',0,'...'
         self.commands = [] if not self.formula else self.GetCommands4Map(self.formula)
         self.start = min(c[0] for c in self.commands) if self.commands else None
         self.length = sum(c[1] for c in self.commands) if self.commands else None
@@ -83,7 +84,8 @@ class ModbusArray(object):
         
     @classmethod
     def is_valid_map(self,formula):
-        return match_2_addresses(formula) or find_all_Regs(formula) or find_all_Reg(formula)
+        return match_2_addresses(formula) \
+            or find_all_Regs(formula) or find_all_Reg(formula)
     
     def subscribe(self,key,callback):
         """
@@ -116,6 +118,7 @@ class ModbusArray(object):
                     cb and cb(key)
                     
             except Exception as e:
+                print(fandango.except2str())
                 print('%s.callback(%s): %s' % (self,cb,e))        
     
     def check(self,regs = None):
@@ -129,21 +132,25 @@ class ModbusArray(object):
                 
     def uncheck(self):
         self.flag = False
+        
     def checked(self):
         return self.flag
     
     def set(self,data):
         self.data = data
+        
     def get(self,i=None):
         if i is None: return self.data
         else: return self.data[i]
     
     def has_address(self,i):
         return self.start<=i<self.end
+    
     def get_address(self,i):
         assert self.has_address(i),'KeyError:%s'%i
         assert (i-self.start)<len(self.data),'OutOfRange:%s'%i
         return self.data[i-self.start]
+    
     def set_address(self,i,j):
         assert self.has_address(i),"KeyError:%s"%i
         i -= self.start
@@ -167,24 +174,35 @@ class ModbusArray(object):
             formula = args[0]
             match = match_2_addresses(formula)
             if match: 
-                saddr1,saddr2 = match.groups() #This accepts two syntax, either (addr1,addr2) or (addr1,+offset)
-                result = self.GetCommands4Map(int(saddr1), int(saddr1)+int(saddr2)-1 if saddr2.startswith('+') else int(saddr2))
+                #This accepts two syntax, (addr1,addr2) or (addr1,+offset)
+                saddr1,saddr2 = match.groups() 
+                result = self.GetCommands4Map(int(saddr1), 
+                    int(saddr1)+int(saddr2)-1 if saddr2.startswith('+') 
+                        else int(saddr2))
             else: #if 'Reg' in formula:
                 result.extend((int(a),int(l),) for a,l in find_all_Regs(formula))
                 [result.append((int(r),1,)) for r in find_all_Reg(formula)]
         else:
-            if len(args)==1 and hasattr(args[0],'__iter__'): addr1,addr2 = args[0][0],args[0][1]
-            elif len(args)==2: addr1,addr2 = args[0],args[1]
-            else: return []
+            if len(args)==1 and hasattr(args[0],'__iter__'): 
+                addr1,addr2 = args[0][0],args[0][1]
+            elif len(args)==2: 
+                addr1,addr2 = args[0],args[1]
+            else: 
+                return []
+            
             size = 1 + addr2-addr1 #It includes the end address in the map to be read
             i,value = 0,self.MAX_REGS_LENGTH
+            
             while i*value<size:
                 send, i = i*value , i+1
-                result.append((int(addr1+send),int(size-send if (size-send)<value else value),))
+                result.append((int(addr1+send),
+                    int(size-send if (size-send)<value else value),))
+                
         return result
         
     def trace(self,msg,level=0):
-        if level<=self.loglevel: print '%s ModbusArray(%s): %s'%(fun.time2str(),self.name,msg)
+        if level<=self.loglevel: 
+            print '%s ModbusArray(%s): %s'%(fun.time2str(),self.name,msg)
         
     def __repr__(self): 
         return '%s:%s,+%s'%(self.name,self.start,self.length)
@@ -283,8 +301,11 @@ class ModbusMap(object):
             if self.default is not Exception:
               return self.default
             raise Exception("AdressNotMapped: '%s'"%key)
-        elif key in self.mappings: return self.mappings[key] #Return a Map
-        else: raise Exception("KeyError: '%s'"%key)
+        elif key in self.mappings: 
+            return self.mappings[key] #Return a Map
+        else: 
+            raise Exception("KeyError: '%s'"%key)
+    
     def __setitem__(self,key,value):
         if fun.isNumber(key):
             raise Exception('NotAllowed!')
@@ -300,14 +321,25 @@ class ModbusMap(object):
         else:
             return False
     
-    def __bool__(self): return bool(len(self))
-    def __len__(self): return self.end-self.start if None not in (self.end,self.start) else 0
-    def __getslice__(self,i,j): return [self[x] for x in range(i,j)]
-    def __iter__(self): return self.mappings.__iter__()
-    def items(self): return self.mappings.items()
-    def keys(self): return self.mappings.keys()
-    def values(self): return self.mappings.values()
-    def clear(self): self.mappings.clear()
-    def asDict(self): return dict((k,v.formula) for k,v in self.items())
-    def __str__(self): return str(self.asDict())
-    def __repr__(self): return 'ModbusMap(%s)[%s:%s]'%(len(self),self.start,self.end)
+    def __bool__(self): 
+        return bool(len(self))
+    def __len__(self): 
+        return self.end-self.start if None not in (self.end,self.start) else 0
+    def __getslice__(self,i,j): 
+        return [self[x] for x in range(i,j)]
+    def __iter__(self): 
+        return self.mappings.__iter__()
+    def items(self): 
+        return self.mappings.items()
+    def keys(self): 
+        return self.mappings.keys()
+    def values(self): 
+        return self.mappings.values()
+    def clear(self): 
+        self.mappings.clear()
+    def asDict(self): 
+        return dict((k,v.formula) for k,v in self.items())
+    def __str__(self): 
+        return str(self.asDict())
+    def __repr__(self): 
+        return 'ModbusMap(%s)[%s:%s]'%(len(self),self.start,self.end)
