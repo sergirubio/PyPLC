@@ -438,8 +438,13 @@ class PyPLC(PyTango.Device_4Impl):
                 
             prev = self.dyn_values[attr].value
             prev = None if isinstance(prev,(Exception,TypeError)) else prev
-            changed = len(prev or [])!=len(result or []) \
-                or any(v!=vv for v,vv in zip(prev,result))       
+ 
+            changed = []
+            for i,v in enumerate(result):
+                if i>=len(prev or []) or v!=[prev[i]]:
+                    changed.append(i)
+            if len(prev or []) > len(result or []):
+                changed.extend(range(len(result),len(prev)))
 
             self.debug('Updating %s cached values ([%d],%s)'
                        %(attr,len(result or []),changed))
@@ -497,7 +502,7 @@ class PyPLC(PyTango.Device_4Impl):
             ## If it is an external command (Synchronous) the threadDict must be stop to execute the external command first.
             ## ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
             if not asynch and hasattr(self,'threadDict'): 
-                self.threadDict.stop()        
+                self.threadDict.stop()
             while retries:
                 try:
                     if time.time()>(self.last_try+timeout):
