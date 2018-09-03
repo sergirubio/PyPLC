@@ -958,6 +958,13 @@ class PyPLC(PyTango.Device_4Impl):
     def read_attr_hardware(self,data):
         read_attrs = DynamicDS.read_attr_hardware(self,data)
         self.debug("read_attr_hardware([%d]=%s)"%(len(data),str(read_attrs)[:80]))
+        
+    def read_AverageModbusCycle(self, attr=None):
+        v = 0.0
+        if getattr(self,'threadDict',None):
+            v = self.threadDict.cycle_average
+        attr.set_value(float(v))
+        
 
 #==================================================================
 #
@@ -1747,6 +1754,10 @@ class PyPLCClass(PyTango.PyDeviceClass):
 
     #    Attribute definitions
     attr_list = {
+        'AverageModbusCycle':
+           [[PyTango.DevDouble,
+           PyTango.SCALAR,
+           PyTango.READ]],            
         }
 
 
