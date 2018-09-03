@@ -109,6 +109,8 @@ class ModbusArray(object):
         """
         Callbacks could be a tuple of (reg0, reg1, reg2, callable)
         If just a callable is passed, then it is executed for any register
+        The callable must an evalAttr alike method, 
+        accepting (aname,WRITE,VALUE,_locals,push) arguments
         """
         if self.callbacks is None:
             self.callbacks = fandango.CaselessDict()
@@ -117,23 +119,29 @@ class ModbusArray(object):
             
     #@fandango.Cached(depth=50,expire=0.2)
     def trigger_callbacks(self,regs = None):
+        """
+        regs = list of addresses that changed
+        """
         if not self.callbacks: 
             return
         for key,cb in self.callbacks.items():
             try:
+                push = False
                 if fun.isSequence(cb):
                     if not regs or any(r in cb for r in regs):
-                        cb = cb[-1]
+                        #print('%s: %s.trigger(%s): callback(%s):%s' % 
+                            #(fun.time2str(),self,key,cb,regs))                        
+                        cb,push = cb[-1],True
                     else:
                         continue
-                #print('%s: %s.trigger(%s): callback(%s)' % 
-                      #(fun.time2str(),self,key,regs or ''))
                 if fun.isCallable(cb):
-                    cb(key)
+                    cb(key,push=push)
                 else:
                     cb = getattr(cb,'push_event',
                         getattr(cb,'event_received',None))
                     cb and cb(key)
+
+                fandango.wait(1.e-4)
                     
             except Exception as e:
                 print(fandango.except2str())

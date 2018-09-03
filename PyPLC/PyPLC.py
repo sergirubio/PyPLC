@@ -441,29 +441,40 @@ class PyPLC(PyTango.Device_4Impl):
  
             changed = []
             for i,v in enumerate(result):
-                if i>=len(prev or []) or v!=[prev[i]]:
+                if i>=len(prev or []) or v!=prev[i]:
                     changed.append(i)
             if len(prev or []) > len(result or []):
                 changed.extend(range(len(result),len(prev)))
 
-            self.debug('Updating %s cached values ([%d],%s)'
-                       %(attr,len(result or []),changed))
+            self.debug('Updating %s cached values ([%d]=>[%d],%s)'
+                %(attr,len(prev or []),len(result or []),isTrue(changed)))
             self.dyn_values[attr].update(result,self.MapDict[attr].time,qual)
             self.MapDict[attr].data = self.dyn_values[attr].value
             self._locals[attr] = result
             
             if changed and callbacks:
+                self.warning('%s changed: %s' % (attr,changed))
                 if self.MapDict[attr].callbacks is None:
                     for k,v in self.dyn_values.items():
                         if attr in v.dependencies \
                                 and self.check_attribute_events(k):
-                            self.info('Add %s to %s callbacks' % (k,attr))
-                            self.MapDict[attr].subscribe(k,self.evalAttr)
+                            try:
+                                r = attr+'\[([0-9]+)\]'
+                                rs = map(int,re.findall(r,v.formula))
+                                self.info('%s: %s' % (k,rs))
+                                cbs = list(map(int,rs))+[self.evalAttr]
+                            except:
+                                self.warning(traceback.format_exc())
+
+                            self.info('Add %s to %s callbacks: %s' 
+                                      % (k,attr,cbs))
+                            self.MapDict[attr].subscribe(k,cbs)
             
                 if self.MapDict[attr].callbacks:
-                    self.info('Trigger %s callbacks: %s' 
-                              % (attr,self.MapDict[attr].callbacks.keys()))
-                    self.MapDict[attr].trigger_callbacks()
+                    #self.info('Trigger %s callbacks: %s' 
+                              #% (attr,self.MapDict[attr].callbacks.keys()))
+                    regs = changed if isSequence(changed) else None
+                    self.MapDict[attr].trigger_callbacks(regs)
             
             self.MapDict[attr].uncheck()
 
