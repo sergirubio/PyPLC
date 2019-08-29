@@ -12,8 +12,10 @@ Information on how to obtain these packages is available at: www.tango-controls.
 
 See the /doc folder for more details
 
-Notes on version 8.0
+Notes on version 8.1
 --------------------
+
+8.1: Further events optimization (requires fandango 14.6)
 
 8.0: Optimized to send events on ModbusMap update
 
