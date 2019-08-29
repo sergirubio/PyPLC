@@ -128,14 +128,16 @@ class ModbusArray(object):
             try:
                 push = False
                 if fun.isSequence(cb):
-                    if not regs or any(r in cb for r in regs):
-                        #print('%s: %s.trigger(%s): callback(%s):%s' % 
-                            #(fun.time2str(),self,key,cb,regs))                        
-                        cb,push = cb[-1],True
+                    if not regs or any(r in cb for r in regs) or (
+                        len(cb)==1 and fun.isCallable(cb[0])):
+                        cb = cb[-1]
+                        # push = True
                     else:
                         continue
+                print('%s: %s.trigger_callbacks(%s): %s:%s' 
+                      % (fun.time2str(),self.name,regs,key,cb))                    
                 if fun.isCallable(cb):
-                    cb(key,push=push)
+                    cb(key) #,push=push)
                 else:
                     cb = getattr(cb,'push_event',
                         getattr(cb,'event_received',None))

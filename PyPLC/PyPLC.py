@@ -1625,7 +1625,7 @@ class PyPLCClass(PyTango.PyDeviceClass):
         'UseEvents':
             [PyTango.DevVarStringArray,
             "Value of this property will be yes/true,no/false or a list of attributes that will trigger push_event (if configured from jive)",
-            ['false'] ],
+            ['true'] ],
         'LogLevel':
             [PyTango.DevString,
             "This property selects the log level (DEBUG/INFO/WARNING/ERROR)",
