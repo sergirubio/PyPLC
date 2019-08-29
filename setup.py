@@ -43,5 +43,6 @@ setup(name = 'pyplc',
       package_dir= package_dir,
       scripts = scripts,
       include_package_data = True,
-      package_data = package_data
+      package_data = package_data,
+      install_requires=['fandango>=14.6.0','PyTango'],
      )
