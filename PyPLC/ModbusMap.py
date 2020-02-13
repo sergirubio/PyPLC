@@ -16,8 +16,7 @@
 #            Commands and DataType management: Maciej Niegowski, mniegowski@cells.es $
 #
 
-import fandango
-import fandango.functional as fun
+import fandango as fn
 import re,time
 
 #Regular Expressions and Utils used in this file:
@@ -59,9 +58,10 @@ class ModbusArray(object):
     """
     MAX_REGS_LENGTH = 120 #Changed by roberto suggestion; 30/April/2009
     
-    def __init__(self,declaration):
+    def __init__(self,declaration,plc_obj=None):
         self.declaration = declaration
         self.loglevel = 0
+        self.plc_obj = plc_obj
         #self.formula contains the previous content of a MapDict
         match = match_declaration(declaration)
         if match:
@@ -73,7 +73,7 @@ class ModbusArray(object):
             split = self.formula.split(',')
             
             if len(split)>2 and re.match('[\*]?/'+re_float,split[2]):
-                self.period = fandango.str2float(split[2])
+                self.period = fn.str2float(split[2])
                 self.formula = ','.join(split[:2])
             else: 
                 self.period = 0
@@ -113,11 +113,11 @@ class ModbusArray(object):
         accepting (aname,WRITE,VALUE,_locals,push) arguments
         """
         if self.callbacks is None:
-            self.callbacks = fandango.CaselessDict()
+            self.callbacks = fn.CaselessDict()
         if key not in self.callbacks:
             self.callbacks[key] = callback
             
-    #@fandango.Cached(depth=50,expire=0.2)
+    #@fn.Cached(depth=50,expire=0.2)
     def trigger_callbacks(self,regs = None):
         """
         regs = list of addresses that changed
@@ -126,28 +126,32 @@ class ModbusArray(object):
             return
         for key,cb in self.callbacks.items():
             try:
-                push = False
-                if fun.isSequence(cb):
-                    if not regs or any(r in cb for r in regs) or (
-                        len(cb)==1 and fun.isCallable(cb[0])):
+                rs, push, org = regs, False, cb
+                if fn.isSequence(cb):
+                    rs = regs and [r for r in regs if r in cb]
+                    if not regs or rs or (len(cb)==1 and fn.isCallable(cb[0])):
                         cb = cb[-1]
-                        # push = True
                     else:
                         continue
-                print('%s: %s.trigger_callbacks(%s): %s:%s' 
-                      % (fun.time2str(),self.name,regs,key,cb))                    
-                if fun.isCallable(cb):
+                msg = ('%s: %s.trigger_callbacks(%s,%s): %s:%s' 
+                      % (fn.time2str(),self.name,fn.shortstr(regs,40),
+                         rs,key,org))
+                if self.plc_obj is not None:
+                    self.plc_obj.debug(msg)
+                else:
+                    print(msg)
+                if fn.isCallable(cb):
                     cb(key) #,push=push)
                 else:
                     cb = getattr(cb,'push_event',
                         getattr(cb,'event_received',None))
                     cb and cb(key)
 
-                fandango.wait(1.e-4)
+                fn.wait(1.e-4)
                     
             except Exception as e:
-                print(fandango.except2str())
-                print('%s.callback(%s): %s' % (self,cb,e))        
+                print(fn.except2str())
+                print('%s.callback(%s,%s): %s' % (self,key,cb,e))
     
     def check(self,regs = None):
         """ 
@@ -233,7 +237,7 @@ class ModbusArray(object):
         
     def trace(self,msg,level=0):
         if level<=self.loglevel: 
-            print '%s ModbusArray(%s): %s'%(fun.time2str(),self.name,msg)
+            print '%s ModbusArray(%s): %s'%(fn.time2str(),self.name,msg)
         
     def __repr__(self): 
         return '%s:%s,+%s'%(self.name,self.start,self.length)
@@ -272,7 +276,7 @@ class ModbusMap(object):
             self.load(property)
         
     def trace(self,msg,level=0):
-        if level<=self.loglevel: print '%s ModbusMap: %s'%(fun.time2str(),msg)
+        if level<=self.loglevel: print '%s ModbusMap: %s'%(fn.time2str(),msg)
         
     def load(self,property):
         """ 
@@ -296,8 +300,8 @@ class ModbusMap(object):
         """ 
         This method allows to load ModbusMap values from a running device server 
         """
-        if fandango.isString(device): device = fandango.tango.get_device(device)
-        self.load(fandango.tango.get_device_property(device.name(),'Mapping'))
+        if fn.isString(device): device = fn.tango.get_device(device)
+        self.load(fn.tango.get_device_property(device.name(),'Mapping'))
         [self[k].set(list(getattr(device,k))) for k in self]
         
     def export(self,filename=None):
@@ -320,7 +324,7 @@ class ModbusMap(object):
         Once a register is updated, all maps containing it are checked to be 
         updated in client side.
         """
-        reg = regs[0] if fun.isIterable(regs) else regs
+        reg = regs[0] if fn.isIterable(regs) else regs
         result = False
         for k,v in self.items():
             if v.flag: continue
@@ -332,7 +336,7 @@ class ModbusMap(object):
         return result
 
     def __getitem__(self,key):
-        if fun.isNumber(key):
+        if fn.isNumber(key):
             key = int(key)
             for v in self.mappings.values(): #Return a mapped addresses
                 if v.has_address(key):
@@ -346,7 +350,7 @@ class ModbusMap(object):
             raise Exception("KeyError: '%s'"%key)
     
     def __setitem__(self,key,value):
-        if fun.isNumber(key):
+        if fn.isNumber(key):
             raise Exception('NotAllowed!')
         else:
             self.mappings[key].set(value)
@@ -354,7 +358,7 @@ class ModbusMap(object):
     def __contains__(self,key):
         if key in self.mappings:
             return True
-        elif fun.isNumber(key):
+        elif fn.isNumber(key):
             #Return a mapped addresses
             return any(m.has_address(key) for m in self.mappings.values())
         else:
