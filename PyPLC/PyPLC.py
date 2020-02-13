@@ -100,10 +100,10 @@
 import PyTango
 import sys,time,inspect,threading,struct,re,traceback
 
-## This device server requires Fandango, you can find the package at: http://www.tango-controls.org/Documents/tools/fandango/fandango
-try: import fandango
-except: import PyTango_utils as fandango
+## This device server requires Fandango
+# https://github.com/tango-controls/fandango
 
+import fandango
 from fandango import DynamicDS,DynamicDSClass,Logger,\
   getLastException,Catched,printf
 import fandango.functional as fun
@@ -323,7 +323,7 @@ class PyPLC(PyTango.Device_4Impl):
                 self.debug('Adding %s(%s) as ThreadDict[%s]' % (var,reg,vals))
                 self.threadDict.append(vals,value=[],period=md.period)#period=[])
         
-        self.threadDict.start()
+        #self.threadDict.start() #moved to always_executed_hook
         self.info('out of PyPLC.initThreadDict()'+'\n'+'-'*80)
         
     # -------------------------------------------------------------------------
@@ -335,8 +335,10 @@ class PyPLC(PyTango.Device_4Impl):
         mapdict,mapping = {},mapping if mapping is not None else self.Mapping
         self.debug('In parseMappingProperty(%s,%s)'%(mapping,update))
         if update: 
-            if not getattr(self,'MapDict',None): self.MapDict = ModbusMap()
-            else: self.MapDict.clear()
+            if not getattr(self,'MapDict',None): 
+                self.MapDict = ModbusMap()
+            else: 
+                self.MapDict.clear()
             self.maps_failed = []
             target = self.MapDict
         else: target = ModbusMap()
@@ -459,10 +461,22 @@ class PyPLC(PyTango.Device_4Impl):
                         if attr in v.dependencies \
                                 and self.check_attribute_events(k):
                             try:
-                                r = attr+'\[([0-9]+)\]'
-                                rs = map(int,re.findall(r,v.formula))
-                                self.info('%s: %s' % (k,rs))
-                                cbs = list(map(int,rs))+[self.evalAttr]
+                                #r = attr+'\[([0-9]+)\]'
+                                #rs = map(int,re.findall(r,v.formula))
+                                # Array access parsing
+                                cbs = list()
+                                r = attr+'\[([0-9\+\-\:]+)\]'
+                                r = [eval(s.replace(':',',')) for s in 
+                                          re.findall(r,v.formula)]
+                                for s in r:
+                                    if isSequence(s):
+                                        cbs.extend(range(int(s[0]),int(s[-1])))
+                                    else:
+                                        cbs.append(int(s))
+                                        
+                                self.info('%s: %s' % (k,cbs))
+                                cbs.append(
+                                    fandango.partial(self.evalAttr,push=True))
                             except:
                                 self.warning(traceback.format_exc())
 
@@ -475,6 +489,8 @@ class PyPLC(PyTango.Device_4Impl):
                               #% (attr,self.MapDict[attr].callbacks.keys()))
                     regs = changed if isSequence(changed) else None
                     self.MapDict[attr].trigger_callbacks(regs)
+            else:
+                self.debug('... nothing changed ...')
             
             self.MapDict[attr].uncheck()
 
@@ -535,7 +551,7 @@ class PyPLC(PyTango.Device_4Impl):
                         #self.debug('In PyPLC.sendModbusCommand(...): Waiting %d*%d ms for asynchronous answer (cid=%s) ...' % (Xretries,int(1000*tw),cid))
                         while another_retries:
                             another_retries -= 1
-                            threading.Event().wait(tw)
+                            fandango.wait(tw)
                             try:
                                 self.modbusLock.acquire()
                                 result = self.modbus.command_inout_reply(cid)
@@ -579,7 +595,7 @@ class PyPLC(PyTango.Device_4Impl):
                             self.threadDict.set_timewait(max(1,self.ErrorTimeWait/1000.))
                         raise e
                     else:
-                        threading.Event().wait(.2)
+                        fandango.wait(.2)
                         continue
                     
                 self.last_communication=time.time()
@@ -788,21 +804,22 @@ class PyPLC(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def delete_device(self):
         try:
-          print('-'*80)
-          print("[Device delete_device method] for %s"%self.get_name())
-          #DynamicDS.delete_device(self)          
-          self.set_state(PyTango.DevState.INIT)
-          self.threadDict.stop()
-          
-          #try: self.modbusLock.release()
-          #except: pass          
-          #del self.modbus
-          print('waiting ...')
-          t0 = time.time()
-          #Waiting longer times does not avoid segfault (sigh)
-          threading.Event().wait(3.) 
-          print(time.time()-t0)
-          print(self.threadDict.alive())
+            print('-'*80)
+            print("[Device delete_device method] for %s"%self.get_name())
+            #self.set_state(PyTango.DevState.INIT)
+            if hasattr(self,'threadDict'):
+                self.threadDict.stop()
+            #Device crashes to core even without threadDict!!
+            
+            #Waiting here provided no improvement
+            try: 
+                self.modbusLock.release()
+            except: 
+                pass          
+            del self.modbus
+            fandango.wait(1.)
+            print('threadDict.alive(): %s' % self.threadDict.alive())
+            DynamicDS.delete_device(self)
         except: 
             traceback.print_exc()
         print('-'*80)
@@ -864,10 +881,13 @@ class PyPLC(PyTango.Device_4Impl):
         # ------------------------------------------------- 
         self.parseMappingProperty(update=True)
         if self.MapDict is not None: 
+            for v in self.MapDict.values():
+                v.plc_obj = self        
             #Parsing ModbusCacheConfig Property
             if self.modbus and hasattr(self,'ModbusCacheConfig') and self.ModbusCacheConfig:
                 self.SetModbusCacheConfig()
-            else: self.warning("ModbusCacheConfig Property has not been defined")                
+            else: 
+                self.warning("ModbusCacheConfig Property has not been defined")                
             if check_polled: 
                 self.check_polled_attributes(new_attr=dict.fromkeys(self.MapDict.keys(),3000))
             self.initThreadDict()
@@ -893,24 +913,14 @@ class PyPLC(PyTango.Device_4Impl):
         try:
             self.debug("In "+self.get_name()+"::always_executed_hook()"+"<"*40)
             now = time.time()
-            prev = self.get_state()
-            
-            #Updating Mapping values, moved to SendModbusCommand
-            #try:
-                ## Wait 1 polling period before evaluating arrays
-                #if now>self.time0 + 2e-3*self.DEFAULT_POLLING_PERIOD:
-                    #for k,v in self.MapDict.items():
-                        #if v.checked() and self.dyn_values[k].date<(now-self.KeepTime/1e3): 
-                            #self.info('In always_executed_hook(): Map "%s" has new data'%k)
-                            #self.ReadMap(k,callbacks=False)
-            #except ModbusMapException,e: 
-                #self.warning("In "+self.get_name()+"::always_executed_hook():"
-                             #+'Unable to update mappings: %s'%traceback.format_exc())
-            #except: 
-                #self.warning("In "+self.get_name()+"::always_executed_hook():"
-                             #+'Unable to update mappings:\n%s'
-                             #%traceback.format_exc())
                 
+            prev = self.get_state()
+
+            if not getattr(self.threadDict,'_Thread',None):
+                self.warning('Starting PyPLC.threadDict ...')
+                self.threadDict.start()
+
+            
             #State is evaluated just once per second (KeepTime property value)
             if now > (self.last_state_machine+self.STATE_MACHINE_PERIOD):
                 
@@ -1792,6 +1802,8 @@ if __name__ == '__main__':
         fandango.dynamic.CreateDynamicCommands(PyPLC,PyPLCClass)
         U.server_init()
         U.server_run()
+        print('waiting ...')
+        fandango.wait(3.)
 
     except PyTango.DevFailed,e:
         print '__main__ -------> Received a DevFailed exception:',e
