@@ -1,0 +1,42 @@
+{% set data = load_setup_py_data(setup_file="../setup.py",
+  from_recipe_dir=True) %}
+
+package:
+  name: {{ data.get('name') }}
+  version: {{ data.get('version') }}
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  script: '{{PYTHON}} setup.py install --single-version-externally-managed
+    --record=record.txt'
+
+  string: 'py{{CONDA_PY}}_{{GIT_DESCRIBE_HASH}}'
+  entry_points:
+    - PyPLC = PyPLC.PyPLC:main
+
+requirements:
+  host:
+    - python {{python}}
+    - setuptools
+  run:
+    - python {{python}}
+    - fandango
+    - pytango
+
+
+test:
+  import:
+    - {{data.get('name')}}
+
+about:
+  home: {{ data.get('url')}}
+  license: {{ data.get('license')}}
+  summary: {{ data.get('description')}}
+  author: {{ data.get('author')}}
+  description: {{ data.get('long_description')}}
+
+
+
