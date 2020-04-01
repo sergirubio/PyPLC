@@ -9,11 +9,13 @@ source:
   path: ..
 
 build:
+  number: {{environ.get('BUILD_NUMBER',0)}}
   noarch: python
   script: '{{PYTHON}} setup.py install --single-version-externally-managed
     --record=record.txt'
 
-  string: 'py{{CONDA_PY}}_{{GIT_DESCRIBE_HASH}}'
+  string: 'py{{CONDA_PY}}_{{ PKG_BUILDNUM }}_{{environ.get
+   ("GIT_DESCRIBE_HASH",0) }}'
   entry_points:
     - PyPLC = PyPLC.PyPLC:main
 
