@@ -31,7 +31,7 @@ requirements:
 
 test:
   import:
-    - {{data.get('name')}}
+    - PyPLC
 
 about:
   home: {{ data.get('url')}}
