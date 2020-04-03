@@ -1,6 +1,8 @@
 {% set data = load_setup_py_data(setup_file="../setup.py",
   from_recipe_dir=True) %}
 
+{% set GIT_HASHTAG = os.popen("git describe --always").read().strip()%}
+
 package:
   name: {{ data.get('name') }}
   version: {{ data.get('version') }}
@@ -14,10 +16,8 @@ build:
   script: '{{PYTHON}} setup.py install --single-version-externally-managed
     --record=record.txt'
 
-  string: 'py{{CONDA_PY}}_{{ PKG_BUILDNUM }}_{{environ.get
-   ("GIT_DESCRIBE_HASH",0) }}'
-  entry_points:
-    - PyPLC = PyPLC.PyPLC:main
+  string: 'py{{CONDA_PY}}_{{ PKG_BUILDNUM }}_g{{GIT_HASHTAG}}'
+  entry_points: {{data.get('entry_points', {}).get('console_scripts', [])}}
 
 requirements:
   host:
@@ -28,10 +28,14 @@ requirements:
     - fandango
     - pytango
 
-
 test:
-  import:
-    - PyPLC
+  requires:
+    - fandango
+    - pytango
+  imports:
+    {% for pack in data['packages'] %}
+    - {{pack}}
+    {% endfor %}
 
 about:
   home: {{ data.get('url')}}
