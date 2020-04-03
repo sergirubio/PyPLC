@@ -1,7 +1,8 @@
 {% set data = load_setup_py_data(setup_file="../setup.py",
   from_recipe_dir=True) %}
 
-{% set GIT_HASHTAG = os.popen("git describe --always").read().strip()%}
+{% set GIT_HASHTAG = os.popen("git log --pretty=format:'%h' -n 1" )
+  .read().strip()%}
 
 package:
   name: {{ data.get('name') }}
