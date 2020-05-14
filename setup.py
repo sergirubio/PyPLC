@@ -23,10 +23,9 @@ To tune some options:
 -------------------------------------------------------------------------------
 """
 
-print(__doc__)
+# print(__doc__)
 
 version = str(open('PyPLC/VERSION').read().strip())
-scripts = ['bin/PyPLC']
 license = 'GPL-3.0'
 
 package_dir = {'PyPLC': 'PyPLC',}
@@ -41,7 +40,11 @@ setup(name = 'pyplc',
       description = 'Tango device for Modbus equipment',
       packages = packages,
       package_dir= package_dir,
-      scripts = scripts,
+      entry_points={
+            'console_scripts': [
+                  'PyPLC = PyPLC.PyPLC:main'
+            ]
+      },
       include_package_data = True,
       package_data = package_data,
       install_requires=['fandango>=14.6.0','PyTango'],

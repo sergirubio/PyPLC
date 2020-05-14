@@ -1,0 +1,49 @@
+{% set data = load_setup_py_data(setup_file="../setup.py",
+  from_recipe_dir=True) %}
+
+{% set GIT_HASHTAG = os.popen("git log --pretty=format:'%h' -n 1" )
+  .read().strip()%}
+
+package:
+  name: {{ data.get('name') }}
+  version: {{ data.get('version') }}
+
+source:
+  path: ..
+
+build:
+  number: {{environ.get('BUILD_NUMBER',0)}}
+  noarch: python
+  script: '{{PYTHON}} setup.py install --single-version-externally-managed
+    --record=record.txt'
+
+  string: 'py{{CONDA_PY}}_{{ PKG_BUILDNUM }}_g{{GIT_HASHTAG}}'
+  entry_points: {{data.get('entry_points', {}).get('console_scripts', [])}}
+
+requirements:
+  host:
+    - python {{python}}
+    - setuptools
+  run:
+    - python {{python}}
+    - fandango
+    - pytango
+
+test:
+  requires:
+    - fandango
+    - pytango
+  imports:
+    {% for pack in data['packages'] %}
+    - {{pack}}
+    {% endfor %}
+
+about:
+  home: {{ data.get('url')}}
+  license: {{ data.get('license')}}
+  summary: {{ data.get('description')}}
+  author: {{ data.get('author')}}
+  description: {{ data.get('long_description')}}
+
+
+

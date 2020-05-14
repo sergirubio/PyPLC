@@ -1785,7 +1785,7 @@ class PyPLCClass(PyTango.PyDeviceClass):
 #    PyPLC class main method
 #
 #==================================================================
-if __name__ == '__main__':
+def main():
     try:
         py = ('PyUtil' in dir(PyTango) and PyTango.PyUtil or PyTango.Util)(sys.argv)
         from fandango.interface import FullTangoInheritance
@@ -1811,7 +1811,11 @@ if __name__ == '__main__':
     except Exception,e:
         print '__main__ -------> An unforeseen exception occured....',e
         traceback.print_exc()
-        
+
+
+if __name__ == '__main__':
+    main()
+
 else:
     from fandango.interface import FullTangoInheritance
     PyPLC,PyPLCClass = FullTangoInheritance('PyPLC',PyPLC,PyPLCClass,DynamicDS,DynamicDSClass,Exclude=['Lock','Unlock','isLocked'],ForceDevImpl=True)
