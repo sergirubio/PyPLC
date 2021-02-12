@@ -357,7 +357,7 @@ class PyPLC(PyTango.Device_4Impl):
         self.info("Mapping's read are: %s"%str(mapdict))
         return mapdict
         
-    @Cached(depth=100,expire=0.05,log=True)
+    @Cached(depth=100,expire=0.05)
     def ReadMap(self,*args,**kwargs):
         '''
         Possible arguments are:
