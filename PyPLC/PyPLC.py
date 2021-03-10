@@ -104,6 +104,7 @@ import sys,time,inspect,threading,struct,re,traceback
 # https://github.com/tango-controls/fandango
 
 import fandango
+import fandango.tango #mandatory
 from fandango import DynamicDS,DynamicDSClass,Logger,\
   getLastException,Catched,printf
 import fandango.functional as fun
@@ -117,8 +118,6 @@ from ModbusMap import ModbusMap,ModbusArray,ModbusMapException
 if 'PyUtil' not in dir(PyTango): 
     PyTango.PyDeviceClass = PyTango.DeviceClass
     PyTango.PyUtil = PyTango.Util
-if 'Device_4Impl' not in dir(PyTango):
-    PyTango.Device_4Impl = PyTango.Device_3Impl
     
 PyPLC__doc__ = """<pre>
 #==================================================================
@@ -157,7 +156,7 @@ the device to execute ReadMap to update the cache values.
 </pre>""".replace('#','')
 
 
-class PyPLC(PyTango.Device_4Impl):
+class PyPLC(PyTango.LatestDeviceImpl):
 
     #--------- Add you global variables here --------------------------
 
@@ -668,7 +667,7 @@ class PyPLC(PyTango.Device_4Impl):
     
     def set_state(self,state,push=True):
         self._state = state
-        DynamicDS.set_state(self,state,push=push) #PyTango.Device_4Impl.set_state(self,state)
+        DynamicDS.set_state(self,state,push=push)
         
     def get_state(self):
         #@Tango6
@@ -688,7 +687,7 @@ class PyPLC(PyTango.Device_4Impl):
         The State will be ON if there has been a succesful communication in the last MAX_IDLE seconds; 
         STANDBY/UNKNOWN/FAULT depending of previous communication errors
         """
-        self.debug('In PyPLC::StateMachine(%s,%s) ...'%(state,status[:80]))
+        self.debug('In PyPLC::StateMachine(%s,%s) ...'%(str(state),str(status)[:80]))
         state,status = state or PyTango.DevState.ON, status or ''
         self.MAX_IDLE = 10*60
         
@@ -773,7 +772,7 @@ class PyPLC(PyTango.Device_4Impl):
     def init_parent_classes(self,cl,name):
         self.call__init__(DynamicDS,cl,name,globals(),
             _locals = self.init_pyplc_lambdas(), useDynStates=True)
-        self.call__init__(PyTango.Device_4Impl,cl,name)
+        self.call__init__(PyTango.LatestDeviceImpl,cl,name)
         
     def exception_hook(self,fname=None,args=None,e=None):
         self.last_exception = traceback.format_exc()
