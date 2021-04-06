@@ -78,7 +78,7 @@ class ModbusArray(object):
             else: 
                 self.period = 0
                 
-            if len(split)>2 and fun.clmatch('[a-zA-Z]+',split[-1]):
+            if len(split)>2 and fn.clmatch('[a-zA-Z]+',split[-1]):
                 self.command = split[-1]
             else:
                 self.command = ''

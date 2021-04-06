@@ -107,7 +107,7 @@ import fandango
 import fandango.tango #mandatory
 from fandango import DynamicDS,DynamicDSClass,Logger,\
   getLastException,Catched,printf
-import fandango.functional as fun
+
 from fandango.functional import *
 from fandango.objects import Cached
 
@@ -566,7 +566,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                                 pass
                                 
                     if self.MapDict: 
-                        reg = arr_argin[0] if fun.isIterable(arr_argin) else arr_argin
+                        reg = arr_argin[0] if isIterable(arr_argin) else arr_argin
                         maps = [k for k,v in self.MapDict.items() if v.has_address(reg)]
                         self.debug('checking mappings for %s: %s'%(reg,maps))
                         for k in maps:
@@ -635,7 +635,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                     return True
                 else:
                     regs = self.MapDict[attr_name].commands
-                    if all(fun.isTrue(self.threadDict.get(','.join(str(r) for r in reg))) for reg in regs):
+                    if all(isTrue(self.threadDict.get(','.join(str(r) for r in reg))) for reg in regs):
                         return True
                     else:
                         self.warning('In PyPLC.is_dyn_allowed(%s): Values not read yet'%(attr_name))
@@ -713,7 +713,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                     for k,m in self.MapDict.items():
                         regs = [self.threadDict.get(','.join(map(str,c)),None)
                                  for c in m.commands]
-                        if not all(fun.isTrue(r) for r in regs):
+                        if not all(isTrue(r) for r in regs):
                             self.maps_failed.append(k)
                 if self.maps_failed and state!=PyTango.DevState.INIT:
                     state = PyTango.DevState.FAULT
@@ -1063,7 +1063,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
             if len(argin)==1: argin = argin[0]
             
             #Check for single Modbus address
-            if not fun.isSequence(argin):
+            if not isSequence(argin):
                 argin = int(argin)
             elif len(argin)==1:
                 argin = int(argin[0])
@@ -1076,7 +1076,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                 argin = self.sendModbusCommand(cmd,arr_argin)
 
             #If not using Modbus, extract raw data from arguments
-            elif fun.isSequence(argin[0]):
+            elif isSequence(argin[0]):
                 i = int(argin[1])
                 argin = argin[0][i],argin[0][i+1]
             else:
