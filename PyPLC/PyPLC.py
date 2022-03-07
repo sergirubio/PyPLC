@@ -434,7 +434,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                 qual = PyTango.AttrQuality.ATTR_INVALID
             else:
                 #Data conversion necessary to avoid numpy issues
-                result = self.dyn_types[attr].pytype(result) 
+                result = self.dyn_values[attr].get_pytype()(result) 
                 qual = PyTango.AttrQuality.ATTR_VALID
                 
             prev = self.dyn_values[attr].value
@@ -456,6 +456,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
             if changed and callbacks:
                 self.warning('%s changed: %s' % (attr,changed))
                 if self.MapDict[attr].callbacks is None:
+                    # Initializing Mapping Callbacks
                     for k,v in self.dyn_values.items():
                         if attr in v.dependencies \
                                 and self.check_attribute_events(k):
@@ -488,6 +489,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                               #% (attr,self.MapDict[attr].callbacks.keys()))
                     regs = changed if isSequence(changed) else None
                     self.MapDict[attr].trigger_callbacks(regs)
+                    
             else:
                 self.debug('... nothing changed ...')
             
@@ -679,8 +681,19 @@ class PyPLC(PyTango.LatestDeviceImpl):
         #This have been overriden to avoid device servers with states managed by qualities
         return self._state
             
-    def check_state(self,set_state=False): pass #Disabling DynamicState management out of always_executed_hook
-    def check_status(self,set=False): pass #Disabling DynamicState management out of always_executed_hook
+    def check_state(self,set_state=False): 
+        pass #Disabling DynamicState management out of always_executed_hook
+    
+    def check_status(self,set=False): 
+        pass #Disabling DynamicState management out of always_executed_hook
+        
+    #def evalAttr(self,aname,WRITE=False,VALUE=None,_locals=None, push=False):
+        #DynamicDS.evalAttr(self,aname,WRITE=WRITE,VALUE=VALUE,
+                                #_locals=self.PyPLC_LAMBDAS.copy(),push=push)
+        
+    #### DYNAMIC STATE EVALUATION
+    #def evalState(self,formula,_locals={}):
+        #DynamicDS.evalState(self,formula,_locals=self.PyPLC_LAMBDAS.copy())
     
     def StateMachine(self,state=None,status=None):
         """
@@ -1525,6 +1538,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                 data+=('"Name" : "%s",\n\n'%str(self.get_name()))
                 data+=('"State" : "%s",\n\n'%str(self.get_state()))
                 data+=('"Status" : """%s""",\n\n'%str(self.get_status()))
+                
                 for k,v in sorted(self.dyn_values.items()):
                     vv = fandango.str2type(v.value,sep_exp='')
                     if fandango.isString(vv): vv = vv.replace('\n',';')

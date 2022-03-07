@@ -141,10 +141,10 @@ class ModbusArray(object):
                 else:
                     print(msg)
                 if fn.isCallable(cb):
-                    cb(key) #,push=push)
+                    cb(key) # defaults to partial(evalAttr,push=True)
                 else:
                     cb = getattr(cb,'push_event',
-                        getattr(cb,'event_received',None))
+                            getattr(cb,'event_received',None))
                     cb and cb(key)
 
                 fn.wait(1.e-4)
