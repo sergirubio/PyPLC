@@ -217,9 +217,10 @@ class ModbusArray(object):
         else:
             if len(args)==1 and hasattr(args[0],'__iter__'): 
                 addr1,addr2 = args[0][0],args[0][1]
-            elif len(args)==2: 
-                addr1,addr2 = args[0],args[1]
-            else: 
+            if len(args)==2: 
+                addr1,addr2 = int(args[0]),int(args[1])
+            else:
+                print('Invalid GetCommands4Map(%s) call' % str(args))
                 return []
             
             size = 1 + addr2-addr1 #It includes the end address in the map to be read

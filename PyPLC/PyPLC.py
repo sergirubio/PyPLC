@@ -383,7 +383,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
         
         # If the argument is the name of a Mapping we replace args and attr_name
         ## as called from always_executed_hook
-        if args[0] in self.MapDict: 
+        if isString(args[0]) and args[0] in self.MapDict: 
             # In this case, formula = mapping
             attr,args = args[0],[self.MapDict[args[0]].formula] 
         
@@ -523,6 +523,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
         if self.ErrorTimeWait>1000*(self.last_try-self.last_failed):
             #PyTango.Except.throw_exception("TimeWAITBetweenRetries","Last communication failed at %s, waiting %s millis"%(time.ctime(self.last_failed),self.ErrorTimeWait),inspect.currentframe().f_code.co_name)
             raise Exception('%s (retry in %s ms)'%(self.last_exception,self.ErrorTimeWait))
+
         if not self.checkModbus(): #It will trigger an exception if Modbus is not reached
             return
         
@@ -581,6 +582,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                                     self.warning('unable to readmap(%s):\n%s'%(k,traceback.format_exc()))
                                 
                     self.last_exception = ''
+                    
                 except Exception,e:
                     retries-=1
                     self.last_exception,self.last_exception_time = 'DevFailed' in str(e) and str(e) or traceback.format_exc(),time.time()
@@ -602,12 +604,17 @@ class PyPLC(PyTango.LatestDeviceImpl):
                 self.last_communication=time.time()
                 if hasattr(self,'threadDict'): 
                     self.threadDict.set_timewait(max(0.01,self.ModbusTimeWait/1000.))
+                    
                 self.last_exception,self.last_exception_time = '',0
                 self.last_failed=0
                 if 0.5<(self.last_communication-self.last_try):
                     self.warning('WARNING!:In PyPLC.sendModbusCommand(...): %s: Modbus communication (%s,%s) took %fms!!!'% \
                         (time.ctime(),command,str(arr_argin),1000*(self.last_communication-self.last_try)))
-                self.average_read_time = self.average_read_time and (.9*self.average_read_time + .1*(self.last_communication-self.last_try)) or (self.last_communication-self.last_try)
+                    
+                self.average_read_time = self.average_read_time and (
+                        .9*self.average_read_time + .1*(self.last_communication-self.last_try)
+                        ) or (self.last_communication-self.last_try)
+                
                 break #Exit while if there's no exceptions
         finally:
             ## If it is an external command (Synchronous) the threadDict must be stop to execute the external command first.
@@ -624,6 +631,9 @@ class PyPLC(PyTango.LatestDeviceImpl):
         '''      
         #@TODO THIS METHOD IS NEVER CALLED!?!?!
         self.debug('In PyPLC.is_dyn_allowed(%s,%s)' % (req_type,attr_name))
+        
+        if self.SimulationMode:
+            return True
 
         if time.time() < self.time0+10.:
             #A minimum delay is required to guarantee device mappings update
@@ -704,38 +714,37 @@ class PyPLC(PyTango.LatestDeviceImpl):
         state,status = state or PyTango.DevState.ON, status or ''
         self.MAX_IDLE = 10*60
         
-        if not self.SimulationMode:
-            if not self.modbus:
-                state = PyTango.DevState.UNKNOWN
-                status += 'Modbus Device %s is not defined or not recognized!!!'%(self.Modbus_name)+'\n'+status
-            elif not self.last_try:
-                state = PyTango.DevState.UNKNOWN
-                status += 'No communication has been established with the device'+'\n'+status
-            elif self.last_failed:
+        if not self.modbus:
+            state = PyTango.DevState.UNKNOWN
+            status += 'Modbus Device %s is not defined or not recognized!!!'%(self.Modbus_name)+'\n'+status
+        elif not self.last_try:
+            state = PyTango.DevState.UNKNOWN
+            status += 'No communication has been established with the device'+'\n'+status
+        elif self.last_failed:
+            state = PyTango.DevState.FAULT
+            status += 'Last Communication failed at %s'%time.ctime(self.last_failed)+'\n'+status
+        elif self.last_communication < time.time()-self.MAX_IDLE and (self.last_communication or self.last_failed):
+            state = PyTango.DevState.FAULT
+            status += 'Last Communication was at %s'%time.ctime(self.last_communication)+'\n'+status
+        elif not self.last_communication:
+            state = PyTango.DevState.INIT
+            status += 'Hardware not contacted yet.\n'+status
+        else:
+            self.maps_failed = []
+            if self.MapDict:
+                for k,m in self.MapDict.items():
+                    regs = [self.threadDict.get(','.join(map(str,c)),None)
+                                for c in m.commands]
+                    if not all(isTrue(r) for r in regs):
+                        self.maps_failed.append(k)
+            if self.maps_failed and state!=PyTango.DevState.INIT:
                 state = PyTango.DevState.FAULT
-                status += 'Last Communication failed at %s'%time.ctime(self.last_failed)+'\n'+status
-            elif self.last_communication < time.time()-self.MAX_IDLE and (self.last_communication or self.last_failed):
-                state = PyTango.DevState.FAULT
-                status += 'Last Communication was at %s'%time.ctime(self.last_communication)+'\n'+status
-            elif not self.last_communication:
-                state = PyTango.DevState.INIT
-                status += 'Hardware not contacted yet.\n'+status
+                status += ('Some Mappings are not available:\n\%s'
+                    % str(self.maps_failed)
+                    +'\n'+status)
             else:
-                self.maps_failed = []
-                if self.MapDict:
-                    for k,m in self.MapDict.items():
-                        regs = [self.threadDict.get(','.join(map(str,c)),None)
-                                 for c in m.commands]
-                        if not all(isTrue(r) for r in regs):
-                            self.maps_failed.append(k)
-                if self.maps_failed and state!=PyTango.DevState.INIT:
-                    state = PyTango.DevState.FAULT
-                    status += ('Some Mappings are not available:\n\%s'
-                        % str(self.maps_failed)
-                        +'\n'+status)
-                else:
-                    state = PyTango.DevState.ON
-                    #status += '%s is ON.\n'%self.get_name()+status
+                state = PyTango.DevState.ON
+                #status += '%s is ON.\n'%self.get_name()+status
                     
         if str(state) not in ('UNKNOWN','FAULT','INIT') and self.last_exception_time<time.time()-600:
             self.last_exception,self.last_exception_time = '',0
@@ -1179,6 +1188,13 @@ class PyPLC(PyTango.LatestDeviceImpl):
         argout = self.sendModbusCommand(comm,arr_argin,asynch=asynch)
         return argout
     
+    def RegsCached(self,argin):
+        """ 
+        Returns address+offset registers from Cached Mappings 
+        """
+        l = argin[0]+argin[1] if len(argin)>1 else argin[0]+1
+        return self.MapDict[argin[0]:l]
+    
 #------------------------------------------------------------------
 #   
 #    HoldingRegs command:
@@ -1603,7 +1619,7 @@ class PyPLCClass(PyTango.PyDeviceClass):
         'DefaultReadCommand':
             [PyTango.DevString,
             "Default read command executed by Reg and Regs commands",
-            ["ReadHoldingRegisters"] ],            
+            ["ReadHoldingRegisters"] ],
         'AddressOffset':
             [PyTango.DevLong,
             "Integer offset added to Addresses in every Modbus command call.",
@@ -1683,10 +1699,13 @@ class PyPLCClass(PyTango.PyDeviceClass):
             [PyTango.DevShort, "Value of the flag in the given Address"]],
         'Bit':
             [[PyTango.DevVarShortArray, "Bit(int,bit): Get a bit from an int (It is not accessing Hardware at all!)"],
-            [PyTango.DevShort, "Bit(int,bit): Get a bit from an int (It is not accessing Hardware at all!)"]],            
+            [PyTango.DevShort, "Bit(int,bit): Get a bit from an int (It is not accessing Hardware at all!)"]], 
         'Regs':
             [[PyTango.DevVarShortArray, "Modbus Address, Nb of Registers"],
             [PyTango.DevVarShortArray, "Spectrum of read Values"]],
+        'RegsCached':
+            [[PyTango.DevVarShortArray, "[Modbus Address, Nb of Registers]"],
+            [PyTango.DevVarShortArray, "Spectrum of read Values read from mappings"]],            
         'HoldingRegs':
             [[PyTango.DevVarShortArray, "Modbus Address, Nb of Registers"],
             [PyTango.DevVarShortArray, "Spectrum of read Values"]],             
