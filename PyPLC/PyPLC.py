@@ -292,9 +292,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
         """
         def read_method(args,comm=self.Regs,log=self.debug):
             try:
-                #log('>'*20 + ' In ThreadDict.read_method(%s)' % args)
-                args = args.split(',')
-                # args = Address, Length <, Command>
+                args = args.split(',') # args = Address, Length <, Command>
                 args = [int(s) for s in args[:2]]+[s for s in args[2:]]
                 ## ASYNCH IS USED TO DIFFERENTIATE THREAD CALLS FROM CLIENT CALLS
                 # So, asynch=False here will stop the thread and read nothing
@@ -405,7 +403,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
 
             self.debug('ReadMap: %d reg commands: %s = %s'%(len(regs),args,regs))
             if hasattr(self,'threadDict'): #reading in background thread
-                self.debug('... reading in background thread')
+                self.debug('read from background thread cache')
                 for reg in regs:
                     key = ','.join(str(r) for r in reg)
                     val = self.threadDict[key]
@@ -455,34 +453,6 @@ class PyPLC(PyTango.LatestDeviceImpl):
             
             if changed and callbacks:
                 self.warning('%s changed: %s' % (attr,changed))
-                if self.MapDict[attr].callbacks is None:
-                    # Initializing Mapping Callbacks
-                    for k,v in self.dyn_values.items():
-                        if attr in v.dependencies \
-                                and self.check_attribute_events(k):
-                            try:
-                                #r = attr+'\[([0-9]+)\]'
-                                #rs = map(int,re.findall(r,v.formula))
-                                # Array access parsing
-                                cbs = list()
-                                r = attr+'\[([0-9\+\-\:]+)\]'
-                                r = [eval(s.replace(':',',')) for s in 
-                                          re.findall(r,v.formula)]
-                                for s in r:
-                                    if isSequence(s):
-                                        cbs.extend(range(int(s[0]),int(s[-1])))
-                                    else:
-                                        cbs.append(int(s))
-                                        
-                                self.info('%s: %s' % (k,cbs))
-                                cbs.append(
-                                    fandango.partial(self.evalAttr,push=True))
-                            except:
-                                self.warning(traceback.format_exc())
-
-                            self.info('Add %s to %s callbacks: %s' 
-                                      % (k,attr,cbs))
-                            self.MapDict[attr].subscribe(k,cbs)
             
                 if self.MapDict[attr].callbacks:
                     #self.info('Trigger %s callbacks: %s' 
@@ -514,11 +484,14 @@ class PyPLC(PyTango.LatestDeviceImpl):
         return True
                 
     def sendModbusCommand(self,command,arr_argin,asynch=False):
-        (self.debug  if asynch else printf)('In PyPLC.sendModbusCommand(%s,%s) ... %s' % (command,arr_argin,['Synch-EXTERNAL','Asynch-INTERNAL'][asynch]))
+        (self.debug  if asynch else printf)('In PyPLC.sendModbusCommand(%s,%s) ... %s' % (
+            command,arr_argin,['Synch-EXTERNAL','Asynch-INTERNAL'][asynch]))
+        
         result,retries,timeout,Xretries=None,3,1.,100.
         # WE WILL WAIT timeout/Xretries seconds between checking if the asynch has arrived
         self.last_try=time.time()
-        if arr_argin is not None and len(arr_argin): arr_argin[0] += self.AddressOffset
+        if arr_argin is not None and len(arr_argin): 
+            arr_argin[0] += self.AddressOffset
         
         if self.ErrorTimeWait>1000*(self.last_try-self.last_failed):
             #PyTango.Except.throw_exception("TimeWAITBetweenRetries","Last communication failed at %s, waiting %s millis"%(time.ctime(self.last_failed),self.ErrorTimeWait),inspect.currentframe().f_code.co_name)
@@ -575,7 +548,8 @@ class PyPLC(PyTango.LatestDeviceImpl):
                         for k in maps:
                             self.MapDict[k].check()
                             #if (self.get_state() not in (DevState.INIT, DevState.UNKNOWN) and \
-                            if time.time() > (self.time0 + 2e-3*self.DEFAULT_POLLING_PERIOD):
+                            if time.time() > (self.time0 + 1e-3*self.DEFAULT_POLLING_PERIOD):
+                                # Wait 1 update cycle before updating attributes
                                 try:
                                     self.ReadMap(k,callbacks=True)
                                 except Exception as e:
@@ -635,7 +609,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
         if self.SimulationMode:
             return True
 
-        if time.time() < self.time0+10.:
+        if time.time() < (self.time0 + 2e-3*self.DEFAULT_POLLING_PERIOD):
             #A minimum delay is required to guarantee device mappings update
             return False
           
@@ -666,7 +640,13 @@ class PyPLC(PyTango.LatestDeviceImpl):
                 self.info('Dynamic Attribute %s not allowed until %s will be read.' % (attr_name,missing))
                 #raise Exception,'Dynamic Attribute %s not allowed until %s will be read.' % (attr_name,missing)
                 return False
-        return True                
+        return True         
+    
+    def dyn_attr(self):
+        self.info('PyPLC.dyn_attr()')
+        DynamicDS.dyn_attr(self)
+        self.init_mapping_callbacks()
+        return    
         
     ###########################################################################
     # State Management methods
@@ -795,6 +775,37 @@ class PyPLC(PyTango.LatestDeviceImpl):
         self.call__init__(DynamicDS,cl,name,globals(),
             _locals = self.init_pyplc_lambdas(), useDynStates=True)
         self.call__init__(PyTango.LatestDeviceImpl,cl,name)
+        
+    def init_mapping_callbacks(self):
+        # Initializing Mapping Callbacks
+        # mapping name MUST appear on attribute formula to be added
+        for mapping in self.MapDict.values():
+            for k,v in self.dyn_values.items():
+                if mapping.name in v.dependencies \
+                        and self.check_attribute_events(k):
+                    try:
+                        # Array access parsing
+                        regs = list()
+                        r = mapping.name+'\[([0-9\+\-\:]+)\]'
+                        r = [eval(s.replace(':',',')) for s in 
+                                    re.findall(r,v.formula)]
+                        for s in r:
+                            if isSequence(s):
+                                regs.extend(range(int(s[0]),int(s[-1])))
+                            else:
+                                regs.append(int(s))
+                        
+                        if len(regs) or mapping.name in v.formula:
+                            self.info('%s: %s' % (k,regs or v.formula))
+                            cb = fandango.partial(
+                                self.evalAttr,aname=k,push=True)
+                            
+                        self.info('Add %s to %s callbacks: %s,%s' 
+                                    % (k,mapping.name,regs,cb))
+                        
+                        mapping.subscribe(regs or k,cb)
+                    except:
+                        self.warning(traceback.format_exc())      
         
     def exception_hook(self,fname=None,args=None,e=None):
         self.last_exception = traceback.format_exc()
