@@ -115,37 +115,38 @@ class ModbusArray(object):
         if self.callbacks is None:
             self.callbacks = fn.CaselessDict()
         if key not in self.callbacks:
+            key = tuple(key) if fn.isSequence(key) else key
             self.callbacks[key] = callback
             
     #@fn.Cached(depth=50,expire=0.2)
     def trigger_callbacks(self,regs = None):
         """
         regs = list of addresses that changed
+        callbacks = {(regs,):callable}
         """
         if not self.callbacks: 
             return
         for key,cb in self.callbacks.items():
             try:
-                rs, push, org = regs, False, cb
-                if fn.isSequence(cb):
-                    rs = regs and [r for r in regs if r in cb]
-                    if not regs or rs or (len(cb)==1 and fn.isCallable(cb[0])):
-                        cb = cb[-1]
-                    else:
-                        continue
-                msg = ('%s: %s.trigger_callbacks(%s,%s): %s:%s' 
-                      % (fn.time2str(),self.name,fn.shortstr(regs,40),
-                         rs,key,org))
+                #rs, push, org = regs, False, cb
+                if regs and fn.isSequence(key) and not any(r in key for r in regs):
+                    continue
+                msg = ('%s: %s.trigger_callbacks(%s): %s:%s' 
+                      % (fn.time2str(),self.name,fn.shortstr(regs,40),key,cb))
                 if self.plc_obj is not None:
-                    self.plc_obj.debug(msg)
+                    self.plc_obj.info(msg)
                 else:
                     print(msg)
+                if fn.isSequence(cb):
+                    cb,args = cb[0],cb[1:]
+                else:
+                    args = []
                 if fn.isCallable(cb):
-                    cb(key) # defaults to partial(evalAttr,push=True)
+                    cb(*args) # defaults to partial(evalAttr,push=True)
                 else:
                     cb = getattr(cb,'push_event',
                             getattr(cb,'event_received',None))
-                    cb and cb(key)
+                    cb and cb(*args)
 
                 fn.wait(1.e-4)
                     
