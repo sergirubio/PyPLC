@@ -798,7 +798,7 @@ class PyPLC(PyTango.LatestDeviceImpl):
                         if len(regs) or mapping.name in v.formula:
                             self.info('%s: %s' % (k,regs or v.formula))
                             cb = fandango.partial(
-                                self.evalAttr,aname=k,push=True)
+                                self.evalAttr,aname=k)
                             
                         self.info('Add %s to %s callbacks: %s,%s' 
                                     % (k,mapping.name,regs,cb))
